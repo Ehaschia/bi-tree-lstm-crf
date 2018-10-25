@@ -1,6 +1,9 @@
 __author__ = 'Ehaschia'
 
-import argparse
+import argparse, sys, os
+from pathlib import Path
+current_path = os.path.realpath(__file__)
+sys.path.append(Path(current_path).absolute().parent.parent)
 import time
 
 import torch.optim as optim
