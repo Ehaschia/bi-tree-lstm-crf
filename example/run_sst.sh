@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-CUDA_VISIBLE_DEVICES=0 python examples/sentiment.py --leaf_lstm --bi_leaf_lstm --leaf_rnn_mode LSTM \
+CUDA_VISIBLE_DEVICES=0 python example/sentiment.py --leaf_lstm --bi_leaf_lstm --leaf_rnn_mode LSTM \
 --tree_mode BUTreeLSTM --pred_mode avg_h --model_mode CRFBiTreeLSTM --batch_size 16 --epoch 50 \
 --hidden_size 150 --softmax_dim 64 --optim_method Adam --learning_rate 0.001 --momentum 0.9 \
 --decay_rate 0.05 --gamma 0.0 --schedule 5 --embedding glove \
