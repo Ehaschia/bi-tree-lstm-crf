@@ -7,7 +7,7 @@ from torch.nn import init
 # alert parameter init
 class BinaryTreeLSTMCell(nn.Module):
     # alert debug this cell!
-    def __init__(self, in_dim, mem_dim):
+    def __init__(self, in_dim, mem_dim, p_tree=0.0):
         super(BinaryTreeLSTMCell, self).__init__()
         self.in_dim = in_dim
         self.mem_dim = mem_dim
@@ -59,7 +59,7 @@ class BinaryTreeLSTM_s(nn.Module):
     # alert single version,
     # TODO remove
 
-    def __init__(self, in_dim, mem_dim):
+    def __init__(self, in_dim, mem_dim, p_tree=0.0):
         super(BinaryTreeLSTM_s, self).__init__()
         self.in_dim = in_dim
         self.mem_dim = mem_dim
@@ -102,7 +102,7 @@ class BinaryTreeLSTM_s(nn.Module):
 
 class BinaryTreeLSTM_v2_p(nn.Module):
     # based on https://arxiv.org/abs/1707.02786
-    def __init__(self, hidden_dim):
+    def __init__(self, hidden_dim, p_tree=0.0):
         super(BinaryTreeLSTM_v2_p, self).__init__()
         self.hidden_dim = hidden_dim
         self.comp_linear = nn.Linear(in_features=2 * hidden_dim,
@@ -142,7 +142,7 @@ class BinarySLSTM_s(nn.Module):
     # alert single version
     # TODO remove
 
-    def __init__(self, input_dim, out_dim):
+    def __init__(self, input_dim, out_dim, p_tree=0.0):
         super(BinarySLSTM_s, self).__init__()
 
         self.input_dim = input_dim
@@ -192,7 +192,7 @@ class BinarySLSTMCell(nn.Module):
     # Based on https://arxiv.org/pdf/1503.04881
     # alert parallel version
 
-    def __init__(self, input_dim, out_dim):
+    def __init__(self, input_dim, out_dim, p_tree=0.0):
         super(BinarySLSTMCell, self).__init__()
 
         self.input_dim = input_dim
@@ -246,7 +246,7 @@ class BinarySLSTMCell(nn.Module):
 
 class BUSLSTMCell(nn.Module):
     # based on https://www.transacl.org/ojs/index.php/tacl/article/view/925
-    def __init__(self, head_dim, input_dim, output_dim):
+    def __init__(self, head_dim, input_dim, output_dim, p_tree=0.0):
         super(BUSLSTMCell, self).__init__()
 
         self.head_dim = head_dim
@@ -308,7 +308,7 @@ class BUSLSTMCell(nn.Module):
 
 class TDLSTMCell(nn.Module):
     # based on https://www.transacl.org/ojs/index.php/tacl/article/view/925
-    def __init__(self, head_dim, input_dim, output_dim):
+    def __init__(self, head_dim, input_dim, output_dim, p_tree=0.0):
 
         super(TDLSTMCell, self).__init__()
 
@@ -327,7 +327,7 @@ class TDLSTMCell(nn.Module):
 
         self.activate_func1 = nn.Sigmoid()
         self.activate_func2 = nn.Tanh()
-
+        self.dropout_tree = nn.Dropout(p_tree)
         self.reset_parameters()
 
     def reset_parameters(self):

@@ -41,7 +41,7 @@ class TreeLstm(nn.Module):
         reset_embedding(embedd_word, self.word_embedding, word_dim, embedd_trainable)
         self.dropout_in = nn.Dropout(p=p_in)
         self.dropout_leaf = nn.Dropout(p=p_leaf)
-        self.dropout_tree = nn.Dropout(p=p_tree)
+        self.p_tree = p_tree
         self.dropout_pred = nn.Dropout(p=p_pred)
         self.leaf_rnn = leaf_rnn
         self.tree_mode = tree_mode
@@ -127,6 +127,8 @@ class TreeLstm(nn.Module):
 
     def single_h_pred(self, tree, seq_out):
         hidden = self.collect_hidden_state(tree)
+        # alert may cause multi dropout here
+        hidden = self.dropout_pred(hidden)
         return self.pred_layer(hidden)
 
     def avg_h_pred(self, tree, seq_out):
@@ -134,8 +136,9 @@ class TreeLstm(nn.Module):
         hidden = self.collect_hidden_state(tree)
         hidden_size = hidden.size()
         avg_hidden = torch.mean(hidden, dim=0, keepdim=True).expand(hidden_size)
-        hidden = torch.cat([avg_hidden , hidden], dim=0)
+        hidden = torch.cat([avg_hidden, hidden], dim=0)
         softmax_in = F.relu(self.dense_softmax(hidden))
+        softmax_in = self.dropout_pred(softmax_in)
         return self.pred_layer(softmax_in)
 
     def avg_seq_h_pred(self, tree, seq_out):
