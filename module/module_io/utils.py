@@ -35,7 +35,9 @@ def load_embedding_dict(embedding, embedding_path, normalize_digits=False):
                 if embedd_dim < 0:
                     embedd_dim = len(tokens) - 1
                 else:
-                    assert (embedd_dim + 1 == len(tokens))
+                    if embedd_dim + 1 != len(tokens):
+                        continue
+                    # assert (embedd_dim + 1 == len(tokens))
                 embedd = np.empty([1, embedd_dim], dtype=np.float32)
                 embedd[:] = tokens[1:]
                 word = DIGIT_RE.sub("0", tokens[0]) if normalize_digits else tokens[0]
