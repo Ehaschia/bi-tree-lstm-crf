@@ -2,6 +2,7 @@ __author__ = 'Ehaschia'
 
 import argparse, sys, os
 from pathlib import Path
+
 current_path = os.path.realpath(__file__)
 print(current_path)
 sys.path.append(Path(current_path).parent.parent)
@@ -16,6 +17,7 @@ from module.module_io.logger import *
 from module.module_io.sst_data import *
 from module.nn.tree_lstm import *
 
+
 def main():
     parser = argparse.ArgumentParser(description='Tuning with bi-directional Tree-LSTM-CRF')
     parser.add_argument('--leaf_lstm', action='store_true', help='use leaf_lstm or not')
@@ -26,7 +28,7 @@ def main():
     parser.add_argument('--tree_mode', choices=['SLSTM', 'TreeLSTM', 'BUTreeLSTM'],
                         help='architecture of tree lstm', required=True)
     parser.add_argument('--model_mode', choices=['TreeLSTM', 'BiTreeLSTM', 'CRFTreeLSTM', 'CRFBiTreeLSTM',
-                                                 'LVeGTreeLSTM', 'LVeGBiTreeLSTM'],
+                                                 'BiCRFBiTreeLSTM', 'LVeGTreeLSTM', 'LVeGBiTreeLSTM'],
                         help='architecture of model', required=True)
     parser.add_argument('--pred_mode', choices=['single_h', 'avg_h', 'avg_seq_h'],
                         required=True, help='prediction layer mode')
@@ -151,7 +153,12 @@ def main():
                                  args.num_labels, embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
                                  p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=True, bi_leaf_rnn=True,
                                  device=device, comp=args.lveg_comp, g_dim=args.gaussian_dim).to(device)
-
+    elif model_mode == 'BiCRFBiTreeLSTM':
+        network = BiCRFBiTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
+                                  args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
+                                  args.num_labels, embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
+                                  p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=True, bi_leaf_rnn=True,
+                                  device=device).to(device)
     else:
         raise NotImplementedError
 
@@ -221,7 +228,7 @@ def main():
         time.sleep(1)
 
         logger.info('train: %d/%d loss: %.4f, time used : %.2fs' % (
-            epoch+1, args.epoch, train_err / len(train_dataset), train_time))
+            epoch + 1, args.epoch, train_err / len(train_dataset), train_time))
 
         network.eval()
         dev_s_corr = 0.0

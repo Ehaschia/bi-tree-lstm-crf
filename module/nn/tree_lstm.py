@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import torch.nn.utils.rnn as rnn_utils
-from .crf import TreeCRF
+from .crf import TreeCRF, BinaryTreeCRF
 from .lveg import BinaryTreeLVeG
 
 
@@ -384,6 +384,38 @@ class LVeGTreeLstm(TreeLstm):
         # fixme make it clear
         seq_output = self.forward(tree)
         preds = self.lveg.predict(tree)
+        preds = torch.Tensor(preds).cpu()
+        target = tree.collect_golden_labels([])
+        target = torch.Tensor(target)
+        return torch.eq(preds, target).float(), preds
+
+
+class BiCRFBiTreeLstm(BiTreeLstm):
+
+    def __init__(self, tree_mode, seq_mode, pred_mode, word_dim, num_words, tree_input_dim, output_dim,
+                 softmax_in_dim, seq_layer_num, num_labels, embedd_word=None, embedd_trainable=True,
+                 p_in=0.5, p_leaf=0.5, p_tree=0.5, p_pred=0.5, leaf_rnn=False, bi_leaf_rnn=False, device=None):
+        super(BiCRFBiTreeLstm, self).__init__(tree_mode, seq_mode, pred_mode, word_dim, num_words, tree_input_dim,
+                                              output_dim, softmax_in_dim, seq_layer_num, num_labels,
+                                              embedd_word=embedd_word, embedd_trainable=embedd_trainable, p_in=p_in,
+                                              p_leaf=p_leaf, p_tree=p_tree, p_pred=p_pred, leaf_rnn=leaf_rnn,
+                                              bi_leaf_rnn=bi_leaf_rnn, device=device)
+
+        self.crf = BinaryTreeCRF(output_dim, num_labels, attention=False, pred_mode=pred_mode,
+                                 only_bu=False, softmax_in_dim=softmax_in_dim)
+        self.softmax = None
+        self.nll_loss = None
+        self.pred_layer = None
+        self.pred = None
+
+    def loss(self, tree):
+        seq_out = self.forward(tree)
+        loss = self.crf.loss(tree)
+        return loss
+
+    def predict(self, tree):
+        seq_output = self.forward(tree)
+        preds = self.crf.predict(tree)
         preds = torch.Tensor(preds).cpu()
         target = tree.collect_golden_labels([])
         target = torch.Tensor(target)
