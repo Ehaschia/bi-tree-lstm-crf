@@ -3,7 +3,8 @@ __author__ = 'Ehaschia'
 import argparse, sys, os
 from pathlib import Path
 current_path = os.path.realpath(__file__)
-sys.path.append(Path(current_path).absolute().parent.parent)
+print(current_path)
+sys.path.append(Path(current_path).parent.parent)
 import time
 
 import torch.optim as optim
@@ -15,7 +16,6 @@ from module.module_io.logger import *
 from module.module_io.sst_data import *
 from module.nn.tree_lstm import *
 
-
 def main():
     parser = argparse.ArgumentParser(description='Tuning with bi-directional Tree-LSTM-CRF')
     parser.add_argument('--leaf_lstm', action='store_true', help='use leaf_lstm or not')
@@ -25,7 +25,8 @@ def main():
     parser.add_argument('--leaf_rnn_num', type=int, default=1, help='layer of leaf lstm')
     parser.add_argument('--tree_mode', choices=['SLSTM', 'TreeLSTM', 'BUTreeLSTM'],
                         help='architecture of tree lstm', required=True)
-    parser.add_argument('--model_mode', choices=['TreeLSTM', 'BiTreeLSTM', 'CRFTreeLSTM', 'CRFBiTreeLSTM'],
+    parser.add_argument('--model_mode', choices=['TreeLSTM', 'BiTreeLSTM', 'CRFTreeLSTM', 'CRFBiTreeLSTM',
+                                                 'LVeGTreeLSTM', 'LVeGBiTreeLSTM'],
                         help='architecture of model', required=True)
     parser.add_argument('--pred_mode', choices=['single_h', 'avg_h', 'avg_seq_h'],
                         required=True, help='prediction layer mode')
@@ -52,6 +53,8 @@ def main():
     parser.add_argument('--p_leaf', type=float, default=0.5, help='Dropout prob for tree lstm input')
     parser.add_argument('--p_tree', type=float, default=0.5, help='Dropout prob in tree lstm node')
     parser.add_argument('--p_pred', type=float, default=0.5, help='Dropout prob for pred layer')
+    parser.add_argument('--lveg_comp', type=int, default=1, help='the component number of mixture gaussian in LVeG')
+    parser.add_argument('--gaussian_dim', type=int, default=1, help='the gaussian dim in LVeG')
 
     # load tree
     args = parser.parse_args()
@@ -133,9 +136,22 @@ def main():
     elif model_mode == 'CRFBiTreeLSTM':
         network = CRFBiTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                                 args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
-                                args.num_labels,embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
-                                p_tree=args.p_tree,p_pred=args.p_pred, leaf_rnn=True, bi_leaf_rnn=True,
+                                args.num_labels, embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
+                                p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=True, bi_leaf_rnn=True,
                                 device=device).to(device)
+    elif model_mode == 'LVeGTreeLSTM':
+        network = LVeGTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
+                               args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
+                               args.num_labels, embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
+                               p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=True, bi_leaf_rnn=True,
+                               device=device, comp=args.lveg_comp, g_dim=args.gaussian_dim).to(device)
+    elif model_mode == 'LVeGBiTreeLSTM':
+        network = LVeGBiTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
+                                 args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
+                                 args.num_labels, embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
+                                 p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=True, bi_leaf_rnn=True,
+                                 device=device, comp=args.lveg_comp, g_dim=args.gaussian_dim).to(device)
+
     else:
         raise NotImplementedError
 
@@ -205,7 +221,7 @@ def main():
         time.sleep(1)
 
         logger.info('train: %d/%d loss: %.4f, time used : %.2fs' % (
-            epoch, args.epoch, train_err / train_p_total, train_time))
+            epoch+1, args.epoch, train_err / len(train_dataset), train_time))
 
         network.eval()
         dev_s_corr = 0.0

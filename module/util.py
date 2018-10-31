@@ -1,5 +1,6 @@
-import numpy
+import numpy as np
 import torch
+
 
 def logsumexp(x, dim=None):
     """
@@ -15,10 +16,19 @@ def logsumexp(x, dim=None):
     if dim is None:
         xmax = x.max()
         xmax_ = x.max()
-        return xmax_ + numpy.log(torch.exp(x - xmax).sum())
+        return xmax_ + torch.log(torch.exp(x - xmax).sum())
     else:
         if x.size()[dim] == 1:
             return x.squeeze(dim)
         xmax, _ = x.max(dim, keepdim=True)
         xmax_, _ = x.max(dim)
         return xmax_ + torch.log(torch.exp(x - xmax).sum(dim))
+
+
+def detect_nan(tensor, name=''):
+    np_tensor = tensor.reshape(-1).cpu().detach().numpy()
+    detect_np = 1.0 - np.isfinite(np_tensor)
+    if np.sum(detect_np) != 0:
+        print(name)
+        print(np_tensor)
+        raise ValueError('NaN Error')

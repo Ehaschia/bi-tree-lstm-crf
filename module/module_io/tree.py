@@ -18,6 +18,8 @@ class Tree(object):
         self.td_state = {}
 
         self.crf_cache = {}
+        self.lveg_cache = {}
+
 
     def add_child(self, child):
         child.parent = self
@@ -151,3 +153,4 @@ class Tree(object):
         self.bu_state = {}
         self.td_state = {}
         self.crf_cache = {}
+        self.lveg_cache = {}
