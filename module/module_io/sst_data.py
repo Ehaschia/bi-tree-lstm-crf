@@ -152,7 +152,7 @@ class SSTDataloader(object):
         line = self.__source_file.readline()
         # why the loop
         if line is not None and len(line.strip()) > 0:
-            line = line.strip()
+            line = line.strip().replace('\\', '')
         else:
             return None
         tree = self.parse_tree(line)
@@ -197,7 +197,7 @@ class SSTDataloader(object):
             raise SyntaxError("Input sentence is not tree structure:" + line)
 
 
-def read_sst_data(source_path, word_alphabet, max_size=None, random=None):
+def read_sst_data(source_path, word_alphabet, max_size=None, random=None, merge=False):
     dataset = SSTDataset(word_alphabet, random=random)
     reader = SSTDataloader(source_path, word_alphabet)
 
@@ -212,11 +212,15 @@ def read_sst_data(source_path, word_alphabet, max_size=None, random=None):
     reader.close()
     dataset.close()
     print("Total number of data: %d" % counter)
+    if merge:
+        dataset.merge_data()
     return dataset
 
 
-def read_sst_data_to_variable(source_path, word_alphabet, device,  max_size=None):
+def read_sst_data_to_variable(source_path, word_alphabet, device, max_size=None, merge=False):
     # this function is used for batch version code
     dataset = read_sst_data(source_path, word_alphabet, max_size)
     dataset.data_to_variable(device)
+    if merge:
+        dataset.merge_data()
     return dataset

@@ -12,7 +12,7 @@ class TreeCRF(nn.Module):
     '''
 
     def __init__(self, input_size, num_labels, attention=True, biaffine=True,
-                 only_bu=True, pred_mode=None, softmax_in_dim=64):
+                 only_bu=True, pred_mode=None, softmax_in_dim=64, need_pred_dense=False):
         '''
 
         Args:
@@ -24,9 +24,7 @@ class TreeCRF(nn.Module):
                 if apply bi-affine parameter.
             **kwargs:
         '''
-        # TODO add bidirectional part
         # TODO attention
-        # TODO dense layer and activate function
 
         super(TreeCRF, self).__init__()
         self.input_size = input_size
@@ -34,20 +32,20 @@ class TreeCRF(nn.Module):
         self.use_attention = attention
         self.trans_matrix = Parameter(torch.Tensor(self.num_labels, self.num_labels))
         self.only_bu = only_bu
+        self.need_pred_dense = need_pred_dense
+        self.dense_softmax = None
+        self.pred_layer = None
 
         if pred_mode == 'single_h':
-            if self.only_bu:
-                self.pred_layer = nn.Linear(input_size, num_labels)
-            else:
-                self.pred_layer = nn.Linear(input_size, num_labels)
-            self.get_emission_score = self.single_h_pred
+            # test
+            input_size = input_size if self.only_bu else 2*input_size
+            self.generate_pred_layer(input_size, softmax_in_dim, num_labels)
+            self.pred = self.single_h_pred
         elif pred_mode == 'avg_h':
-            if self.only_bu:
-                self.dense_softmax = nn.Linear(2 * input_size, softmax_in_dim)
-            else:
-                self.dense_softmax = nn.Linear(4 * input_size, softmax_in_dim)
-            self.pred_layer = nn.Linear(softmax_in_dim, num_labels)
-            self.get_emission_score = self.avg_h_pred
+            input_size = 2*input_size if self.only_bu else 4 * input_size
+            self.generate_pred_layer(input_size, softmax_in_dim, num_labels)
+            self.pred = self.avg_h_pred
+
         elif pred_mode == 'avg_seq_h':
             # TODO
             self.pred_layer = nn.Linear(2 * input_size, num_labels)
@@ -57,6 +55,13 @@ class TreeCRF(nn.Module):
         # self.attention = BiAAttention(input_size, input_size, num_labels, biaffine=biaffine)
         self.reset_parameter()
 
+    def generate_pred_layer(self, input_size, softmax_in_dim, num_labels):
+        if self.need_pred_dense:
+            self.dense_softmax = nn.Linear(input_size, softmax_in_dim)
+            self.pred_layer = nn.Linear(softmax_in_dim, num_labels)
+        else:
+            self.pred_layer = nn.Linear(input_size, num_labels)
+
     def collect_avg_hidden(self, tree):
         hidden_collector = tree.collect_hidden_state([], bidirectional=not self.only_bu)
         hiddens = torch.cat(hidden_collector[0], dim=0)
@@ -64,13 +69,23 @@ class TreeCRF(nn.Module):
         return avg_hidden
 
     def single_h_pred(self, hidden, avg_h):
-        return self.pred_layer(hidden)
+        if self.dense_softmax is not None:
+            softmax_in = F.relu(self.dense_softmax(hidden))
+            pred = self.pred_layer(softmax_in)
+        else:
+            pred = self.pred_layer(hidden)
+        return pred
 
     def avg_h_pred(self, hidden, avg_h):
         # based on https://www.transacl.org/ojs/index.php/tacl/article/view/925
         hidden = torch.cat([hidden, avg_h], dim=0)
-        softmax_in = F.relu(self.dense_softmax(hidden))
-        return self.pred_layer(softmax_in)
+        if self.dense_softmax is not None:
+            softmax_in = F.relu(self.dense_softmax(hidden))
+            pred = self.pred_layer(softmax_in)
+        else:
+            pred = self.pred_layer(hidden)
+
+        return pred
 
     def avg_seq_h_pred(self, hidden, avg_h):
         # avg_h_pred + seq lstm
@@ -79,8 +94,6 @@ class TreeCRF(nn.Module):
 
     def reset_parameter(self):
         nn.init.xavier_normal_(self.trans_matrix)
-        # nn.init.constant_(self.dense.bias, 0.0)
-        # nn.init.xavier_normal_(self.dense.weight)
 
     def forward(self, tree, avg_h):
         # just calculate the inside score

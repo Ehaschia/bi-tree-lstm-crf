@@ -20,7 +20,6 @@ class Tree(object):
         self.crf_cache = {}
         self.lveg_cache = {}
 
-
     def add_child(self, child):
         child.parent = self
         self.children.append(child)
@@ -130,7 +129,7 @@ class Tree(object):
         if hidden_state.size()[0] != 1:
             holder.append(hidden_state.unsqueeze(0))
         else:
-            holder.append(hidden_state['h'])
+            holder.append(hidden_state)
         if label_holder is not None:
             label_holder.append(self.label)
         return holder, label_holder

@@ -61,6 +61,7 @@ class Alphabet(object):
         self.keep_growing = True
 
     def close(self):
+        self.replace_bruckets()
         self.keep_growing = False
 
     def get_content(self):
@@ -77,6 +78,22 @@ class Alphabet(object):
             json.dump(self.get_content(), open(os.path.join(out_directory, saving_name + '.json'), 'w'), indent=4)
         except Exception as e:
             self.logger.warn("Alphabet is not saved: %s" % repr(e))
+
+    def replace_bruckets(self):
+        lrb_idx = self.instance2index['-LRB-']
+        rrb_idx = self.instance2index['-RRB-']
+        lrb_cnt = self.counter['-LRB-']
+        rrb_cnt = self.counter['-RRB-']
+        del self.instance2index['-LRB-']
+        del self.instance2index['-RRB-']
+        del self.counter['-LRB-']
+        del self.counter['-RRB-']
+        self.instance2index['('] = lrb_idx
+        self.instance2index[')'] = rrb_idx
+        self.counter['('] = lrb_cnt
+        self.counter[')'] = rrb_cnt
+        self.instances[lrb_idx] = '('
+        self.instances[rrb_idx] = ')'
 
     def __from_json(self, data):
         self.instances = data['instances']

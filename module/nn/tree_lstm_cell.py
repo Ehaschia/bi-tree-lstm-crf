@@ -32,10 +32,11 @@ class BinaryTreeLSTMCell(nn.Module):
     def forward(self, l, r, inputs=None, dim=0):
         l_h, l_c = l['h'], l['c']
         r_h, r_c = r['h'], r['c']
-        inputs = l_h.detach().new(1, self.in_dim).fill_(0.).requires_grad_()
+        if inputs is None:
+            inputs = l_h.detach().new(1, self.in_dim).fill_(0.).requires_grad_()
         child_h = torch.cat([l_h, r_h], dim=dim)
         child_c = torch.cat([l_c, r_c], dim=dim)
-        child_h_sum = torch.sum(child_h, dim=0, keepdim=True)
+        child_h_sum = torch.sum(child_h, dim=dim, keepdim=True)
 
         iou = self.ioux(inputs) + self.iouh(child_h_sum)
         i, o, u = torch.split(iou, iou.size(1) // 3, dim=1)

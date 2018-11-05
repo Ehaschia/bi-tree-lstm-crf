@@ -9,7 +9,7 @@ from module.util import logsumexp, detect_nan
 class BinaryTreeLVeG(nn.Module):
 
     def __init__(self, input_dim, num_label, comp, gaussian_dim, attention=True, biaffine=True,
-                 only_bu=True, pred_mode=None, softmax_in_dim=64):
+                 only_bu=True, pred_mode=None, softmax_in_dim=64, pred_dense_layer=False):
         # alert may we can use attention as mixing weight
         # TODO let weight as attentnion
         # alert we only use the hidden state to predict the gaussian parameter, maybe we can change here
@@ -23,6 +23,11 @@ class BinaryTreeLVeG(nn.Module):
         self.pred_mode = pred_mode
         self.softmax_in_dim = softmax_in_dim
         self.comp = comp
+        self.dense_state = None
+        self.pred_dense_layer = pred_dense_layer
+        self.state_weight_layer = None
+        self.state_mu_layer = None
+        self.state_var_layer = None
 
         self.trans_weight = Parameter(torch.Tensor(num_label, num_label, num_label, comp))
         self.trans_mu_p = Parameter(torch.Tensor(num_label, num_label, num_label, comp, gaussian_dim))
@@ -38,25 +43,13 @@ class BinaryTreeLVeG(nn.Module):
         self.trans_root_weight = Parameter(torch.Tensor(num_label, comp))
 
         if pred_mode == 'single_h':
-            if self.only_bu:
-                self.state_weight_layer = nn.Linear(input_dim, num_label * comp)
-                self.state_mu_layer = nn.Linear(input_dim, num_label * comp * gaussian_dim)
-                self.state_var_layer = nn.Linear(input_dim, num_label * comp * gaussian_dim)
-            else:
-                self.state_weight_layer = nn.Linear(2 * input_dim, num_label * comp)
-                self.state_mu_layer = nn.Linear(2 * input_dim, num_label * comp * gaussian_dim)
-                self.state_var_layer = nn.Linear(2 * input_dim, num_label * comp * gaussian_dim)
+            pred_input_dim = input_dim if self.only_bu else input_dim*2
+            self.generate_state_layer(pred_input_dim)
 
             self.get_emission_gm = self.single_h_pred
         elif pred_mode == 'avg_h':
-            if self.only_bu:
-                self.dense_softmax = nn.Linear(2 * input_dim, softmax_in_dim)
-            else:
-                self.dense_softmax = nn.Linear(4 * input_dim, softmax_in_dim)
-
-            self.state_weight_layer = nn.Linear(softmax_in_dim, num_label * comp)
-            self.state_mu_layer = nn.Linear(softmax_in_dim, num_label * comp * gaussian_dim)
-            self.state_var_layer = nn.Linear(softmax_in_dim, num_label * comp * gaussian_dim)
+            pred_input_dim = input_dim*2 if self.only_bu else input_dim * 4
+            self.generate_state_layer(pred_input_dim)
 
             self.get_emission_gm = self.avg_h_pred
         elif pred_mode == 'avg_seq_h':
@@ -67,6 +60,17 @@ class BinaryTreeLVeG(nn.Module):
             raise NotImplementedError("the pred model " + pred_mode + " is not implemented!")
 
         self.reset_parameter()
+
+    def generate_state_layer(self, input_dim):
+        if self.pred_dense_layer:
+            self.dense_state = nn.Linear(input_dim, self.softmax_in_dim)
+            self.state_weight_layer = nn.Linear(self.softmax_in_dim, self.num_label*self.comp)
+            self.state_mu_layer = nn.Linear(self.softmax_in_dim, self.num_label*self.comp*self.gaussian_dim)
+            self.state_var_layer = nn.Linear(self.softmax_in_dim, self.num_label*self.comp*self.gaussian_dim)
+        else:
+            self.state_weight_layer = nn.Linear(input_dim, self.num_label*self.comp)
+            self.state_mu_layer = nn.Linear(input_dim, self.num_label*self.comp*self.gaussian_dim)
+            self.state_var_layer = nn.Linear(input_dim, self.num_label*self.comp*self.gaussian_dim)
 
     def reset_parameter(self):
 
@@ -103,19 +107,25 @@ class BinaryTreeLVeG(nn.Module):
         return avg_hidden
 
     def single_h_pred(self, hidden, avg_h):
-        state_weight = self.state_weight_layer(hidden).reshape(self.num_label, self.comp)
-        state_mu = self.state_mu_layer(hidden).reshape(self.num_label, self.comp, self.gaussian_dim)
-        state_var = self.state_var_layer(hidden).reshape(self.num_label, self.comp, self.gaussian_dim)
-
+        if self.dense_state is None:
+            state_in = hidden
+        else:
+            state_in = F.relu(self.dense_state(hidden))
+        state_weight = self.state_weight_layer(state_in).reshape(self.num_label, self.comp)
+        state_mu = self.state_mu_layer(state_in).reshape(self.num_label, self.comp, self.gaussian_dim)
+        state_var = self.state_var_layer(state_in).reshape(self.num_label, self.comp, self.gaussian_dim)
         return state_weight, state_mu, state_var
 
     def avg_h_pred(self, hidden, avg_h):
         # based on https://www.transacl.org/ojs/index.php/tacl/article/view/925
         hidden = torch.cat([hidden, avg_h], dim=0)
-        softmax_in = F.relu(self.dense_softmax(hidden))
-        state_weight = self.state_weight_layer(softmax_in).reshape(self.num_label, self.comp)
-        state_mu = self.state_mu_layer(softmax_in).reshape(self.num_label, self.comp, self.gaussian_dim)
-        state_var = self.state_var_layer(softmax_in).reshape(self.num_label, self.comp, self.gaussian_dim)
+        if self.dense_state is None:
+            state_in = hidden
+        else:
+            state_in = F.relu(self.dense_state(hidden))
+        state_weight = self.state_weight_layer(state_in).reshape(self.num_label, self.comp)
+        state_mu = self.state_mu_layer(state_in).reshape(self.num_label, self.comp, self.gaussian_dim)
+        state_var = self.state_var_layer(state_in).reshape(self.num_label, self.comp, self.gaussian_dim)
         return state_weight, state_mu, state_var
 
     def avg_seq_h_pred(self, hidden, avg_h):

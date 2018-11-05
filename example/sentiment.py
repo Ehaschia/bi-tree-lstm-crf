@@ -1,11 +1,9 @@
 __author__ = 'Ehaschia'
 
 import argparse, sys, os
-from pathlib import Path
+# sys.path.append('/home/ehaschia/Code/bi-tree-lstm-crf')
 
-current_path = os.path.realpath(__file__)
-print(current_path)
-sys.path.append(Path(current_path).parent.parent)
+
 import time
 
 import torch.optim as optim
@@ -16,6 +14,7 @@ from module.module_io.alphabet import Alphabet
 from module.module_io.logger import *
 from module.module_io.sst_data import *
 from module.nn.tree_lstm import *
+from tensorboardX import SummaryWriter
 
 
 def main():
@@ -32,6 +31,7 @@ def main():
                         help='architecture of model', required=True)
     parser.add_argument('--pred_mode', choices=['single_h', 'avg_h', 'avg_seq_h'],
                         required=True, help='prediction layer mode')
+    parser.add_argument('--pred_dense_layer', action='store_true', help='dense_layer before predict')
     parser.add_argument('--batch_size', type=int, default=16, help='Number of batch')
     parser.add_argument('--epoch', type=int, default=50, help='run epoch')
     parser.add_argument('--hidden_size', type=int, default=150, help='Number of hidden units in tree structure')
@@ -66,6 +66,16 @@ def main():
     batch_size = args.batch_size
     embedd_mode = args.embedding
     model_mode = args.model_mode
+    pred_dense_layer = args.pred_dense_layer
+    train_writer = SummaryWriter(log_dir='/home/ehaschia/Code/bi-tree-lstm-crf/log/train')
+    dev_writer = SummaryWriter(log_dir='/home/ehaschia/Code/bi-tree-lstm-crf/log/dev')
+
+    def add_scalar_summary(summary_writer, name, value, step):
+        if torch.is_tensor(value):
+            value = value.item()
+        summary_writer.add_scalar(tag=name, scalar_value=value,
+                                  global_step=step)
+
     # alphabet
     # TODO alphabet save
     word_alphabet = Alphabet('word', default_value=True)
@@ -78,14 +88,9 @@ def main():
 
     myrandom = Random(48)
 
-    train_dataset = read_sst_data(args.train, word_alphabet, random=myrandom)
-    dev_dataset = read_sst_data(args.dev, word_alphabet, random=myrandom)
-    test_dataset = read_sst_data(args.test, word_alphabet, random=myrandom)
-
-    # TODO ugly, fix here
-    train_dataset.merge_data()
-    dev_dataset.merge_data()
-    test_dataset.merge_data()
+    train_dataset = read_sst_data(args.train, word_alphabet, random=myrandom, merge=True)
+    dev_dataset = read_sst_data(args.dev, word_alphabet, random=myrandom, merge=True)
+    test_dataset = read_sst_data(args.test, word_alphabet, random=myrandom, merge=True)
 
     # close word_alphabet
     word_alphabet.close()
@@ -124,29 +129,33 @@ def main():
         network = TreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                            args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num, args.num_labels,
                            embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf, p_tree=args.p_tree,
-                           p_pred=args.p_pred, leaf_rnn=True, bi_leaf_rnn=True, device=device).to(device)
+                           p_pred=args.p_pred, leaf_rnn=True, bi_leaf_rnn=True, device=device,
+                           pred_dense_layer=pred_dense_layer).to(device)
     elif model_mode == 'BiTreeLSTM':
         network = BiTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                              args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num, args.num_labels,
                              embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf, p_tree=args.p_tree,
-                             p_pred=args.p_pred, leaf_rnn=True, bi_leaf_rnn=True, device=device).to(device)
+                             p_pred=args.p_pred, leaf_rnn=True, bi_leaf_rnn=True, device=device,
+                             pred_dense_layer=pred_dense_layer).to(device)
     elif model_mode == 'CRFTreeLSTM':
         network = CRFTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                               args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num, args.num_labels,
                               embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf, p_tree=args.p_tree,
-                              p_pred=args.p_pred, leaf_rnn=True, bi_leaf_rnn=True, device=device).to(device)
+                              p_pred=args.p_pred, leaf_rnn=True, bi_leaf_rnn=True, device=device,
+                              pred_dense_layer=pred_dense_layer).to(device)
     elif model_mode == 'CRFBiTreeLSTM':
         network = CRFBiTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                                 args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
                                 args.num_labels, embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
                                 p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=True, bi_leaf_rnn=True,
-                                device=device).to(device)
+                                device=device, pred_dense_layer=pred_dense_layer).to(device)
     elif model_mode == 'LVeGTreeLSTM':
         network = LVeGTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                                args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
                                args.num_labels, embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
                                p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=True, bi_leaf_rnn=True,
-                               device=device, comp=args.lveg_comp, g_dim=args.gaussian_dim).to(device)
+                               device=device, comp=args.lveg_comp, g_dim=args.gaussian_dim,
+                               pred_dense_layer=pred_dense_layer).to(device)
     elif model_mode == 'LVeGBiTreeLSTM':
         network = LVeGBiTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                                  args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
@@ -158,12 +167,13 @@ def main():
                                   args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
                                   args.num_labels, embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
                                   p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=True, bi_leaf_rnn=True,
-                                  device=device).to(device)
+                                  device=device, pred_dense_layer=pred_dense_layer).to(device)
     else:
         raise NotImplementedError
 
     optim_method = args.optim_method
-    lr = args.learning_rate
+    learning_rate = args.learning_rate
+    lr = learning_rate
     momentum = args.momentum
     decay_rate = args.decay_rate
     gamma = args.gamma
@@ -171,7 +181,7 @@ def main():
 
     # optim init
     if optim_method == 'SGD':
-        optimizer = optim.SGD(network.parameters(), lr=lr, momentum=momentum, weight_decay=gamma)
+        optimizer = optim.SGD(network.parameters(), lr=lr, momentum=momentum, weight_decay=gamma, nesterov=True)
     elif optim_method == 'Adam':
         # default lr is 0.001
         optimizer = optim.Adam(network.parameters(), lr=lr, weight_decay=gamma)
@@ -195,12 +205,11 @@ def main():
     test_p_correct = 0.0
     test_s_correct = 0.0
     test_p_total = 0
-
-    for epoch in range(args.epoch):
+    for epoch in range(1, args.epoch + 1):
         train_dataset.shuffle()
 
-        print('Epoch %d (learning rate=%.4f, decay rate=%.4f (schedule=%d)): ' % (
-            epoch, lr, decay_rate, schedule))
+        print('Epoch %d (optim_method=%s, learning rate=%.4f, decay rate=%.4f (schedule=%d)): ' % (
+            epoch, optim_method, lr, decay_rate, schedule))
         time.sleep(1)
         start_time = time.time()
         train_err = 0.0
@@ -221,14 +230,22 @@ def main():
             if i % batch_size == 0 and i != 0:
                 optimizer.step()
                 optimizer.zero_grad()
-                for dealed_tree in forest:
-                    dealed_tree.clean()
+                for learned_tree in forest:
+                    learned_tree.clean()
+                forest = []
+
+        optimizer.step()
+        optimizer.zero_grad()
+        for learned_tree in forest:
+            learned_tree.clean()
         train_time = time.time() - start_time
 
-        time.sleep(1)
+        time.sleep(0.5)
 
         logger.info('train: %d/%d loss: %.4f, time used : %.2fs' % (
-            epoch + 1, args.epoch, train_err / len(train_dataset), train_time))
+            epoch, args.epoch, train_err / len(train_dataset), train_time))
+
+        add_scalar_summary(train_writer, 'loss', train_err / len(train_dataset), epoch)
 
         network.eval()
         dev_s_corr = 0.0
@@ -247,11 +264,13 @@ def main():
 
         time.sleep(1)
 
-        print('dev phase corr: %d, dev phase total: %d, dev phase acc: %.2f%%' % (
-            dev_p_corr, dev_p_total, dev_p_corr * 100 / dev_p_total))
-        print('dev sents corr: %d, dev sents total: %d, dev sents acc: %.2f%%' % (
-            dev_s_corr, dev_s_total, dev_s_corr * 100 / dev_s_total))
+        add_scalar_summary(dev_writer, 'phase acc', (dev_p_corr * 100 / dev_p_total), epoch)
+        add_scalar_summary(dev_writer, 'sents acc', (dev_s_corr * 100 / dev_s_total), epoch)
 
+        print('dev phase acc: %.2f%%, dev sents acc: %.2f%%' % (dev_p_corr * 100 / dev_p_total,
+                                                                dev_s_corr * 100 / dev_s_total))
+        # alert here we use p max
+        # if dev_s_corr > dev_s_correct:
         if dev_p_corr > dev_p_correct:
             dev_p_correct = dev_p_corr
             dev_s_correct = dev_s_corr
@@ -274,20 +293,16 @@ def main():
 
             time.sleep(1)
 
-            print('test phase corr: %d, test phase total: %d, test phase acc: %.2f%%' % (
-                test_p_correct, test_p_total, test_p_correct * 100 / test_p_total))
-            print('test sents corr: %d, test sents total: %d, test sents acc: %.2f%%' % (
-                test_s_correct, len(test_dataset), test_s_correct * 100 / len(test_dataset)))
+            print('test phase acc: %.2f%%, test sents acc: %.2f%%' % (test_p_correct * 100 / test_p_total,
+                                                                      test_s_correct * 100 / len(test_dataset)))
 
-        print("best phase dev corr: %d, phase total: %d, phase acc: %.2f%% (epoch: %d)" % (
-            dev_p_correct, dev_p_total, dev_p_correct * 100 / dev_p_total, best_epoch))
-        print("best sents dev corr: %d, sents total: %d, sents acc: %.2f%% (epoch: %d)" % (
-            dev_s_correct, dev_s_total, dev_s_correct * 100 / dev_s_total, best_epoch))
-        print("best phase test corr: %d, phase total: %d, phase acc: %.2f%% (epoch: %d)" % (
-            test_p_correct, test_p_total, test_p_correct * 100 / test_p_total, best_epoch))
-        print("best sents test corr: %d, sents total: %d, sents acc: %.2f%% (epoch: %d)" % (
-            test_s_correct, len(test_dataset), test_s_correct * 100 / len(test_dataset), best_epoch))
-        # TODO Implement decay_rate and schedule
+        print("best dev phase acc: %.2f%%, sents acc: %.2f%% (epoch: %d)" % (
+            dev_p_correct * 100 / dev_p_total, dev_s_correct * 100 / dev_s_total, best_epoch))
+        print("best tst phase corr: %.2f%%, sents acc: %.2f%% (epoch: %d)" % (
+            test_p_correct * 100 / test_p_total, test_s_correct * 100 / len(test_dataset), best_epoch))
+        if optim_method == "SGD" and epoch % schedule == 0:
+            lr = learning_rate / (1.0 + epoch * decay_rate)
+            optimizer = optim.SGD(network.parameters(), lr=lr, momentum=momentum, weight_decay=gamma, nesterov=True)
 
 
 if __name__ == '__main__':
