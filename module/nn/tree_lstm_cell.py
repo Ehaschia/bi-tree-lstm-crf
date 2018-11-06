@@ -209,8 +209,8 @@ class BinarySLSTMCell(nn.Module):
 
     def forward(self, l, r, inputs=None, dim=1):
         # input size [batch, input_size]
-        h_l, c_l = l['h'], l['c']
-        h_r, c_r = r['h'], r['c']
+        h_l, c_l = l['h'].unsqueeze(0), l['c'].unsqueeze(0)
+        h_r, c_r = r['h'].unsqueeze(0), r['c'].unsqueeze(0)
         concat_input = torch.cat((h_l, h_r, c_l, c_r), dim=dim)
         concat_h = torch.cat((h_l, h_r), dim=dim)
         # input gate
@@ -228,7 +228,7 @@ class BinarySLSTMCell(nn.Module):
         o_t = F.sigmoid(self.o(concat_tmp))
         h_t = o_t * F.tanh(c_t)
 
-        return {'h': h_t, 'c': c_t}
+        return {'h': h_t.squeeze(0), 'c': c_t.squeeze(0)}
 
 
 class BUSLSTMCell(nn.Module):
