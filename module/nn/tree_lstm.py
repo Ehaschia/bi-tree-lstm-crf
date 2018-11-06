@@ -60,7 +60,7 @@ class TreeLstm(nn.Module):
             self.generate_pred_layer(output_dim, softmax_in_dim, num_labels)
             self.pred = self.single_h_pred
         elif pred_mode == 'avg_h':
-            self.generate_pred_layer(2*output_dim, softmax_in_dim, num_labels)
+            self.generate_pred_layer(2 * output_dim, softmax_in_dim, num_labels)
             self.pred = self.avg_h_pred
         elif pred_mode == 'avg_seq_h':
             # TODO
@@ -232,10 +232,10 @@ class BiTreeLstm(TreeLstm):
         self.td_rnn_cell = TDLSTMCell(word_dim, tree_input_dim, output_dim)
 
         if pred_mode == 'single_h':
-            self.generate_pred_layer(2*output_dim, softmax_in_dim, num_labels)
+            self.generate_pred_layer(2 * output_dim, softmax_in_dim, num_labels)
             self.pred = self.single_h_pred
         elif pred_mode == 'avg_h':
-            self.generate_pred_layer(4*output_dim, softmax_in_dim, num_labels)
+            self.generate_pred_layer(4 * output_dim, softmax_in_dim, num_labels)
             self.pred = self.avg_h_pred
         elif pred_mode == 'avg_seq_h':
             # TODO
@@ -497,6 +497,38 @@ class BiCRFBiTreeLstm(BiTreeLstm):
 
         self.crf = BinaryTreeCRF(output_dim, num_labels, attention=False, pred_mode=pred_mode,
                                  only_bu=False, softmax_in_dim=softmax_in_dim)
+        self.ce_loss = None
+        self.pred_layer = None
+        self.pred = None
+
+    def loss(self, tree):
+        seq_out = self.forward(tree)
+        loss = self.crf.loss(tree)
+        return loss
+
+    def predict(self, tree):
+        seq_output = self.forward(tree)
+        preds = self.crf.predict(tree)
+        preds = torch.Tensor(preds).cpu()
+        target = tree.collect_golden_labels([])
+        target = torch.Tensor(target)
+        return torch.eq(preds, target).float(), preds
+
+
+class BiCRFTreeLstm(TreeLstm):
+
+    def __init__(self, tree_mode, seq_mode, pred_mode, word_dim, num_words, tree_input_dim, output_dim,
+                 softmax_in_dim, seq_layer_num, num_labels, embedd_word=None, embedd_trainable=True,
+                 p_in=0.5, p_leaf=0.5, p_tree=0.5, p_pred=0.5, leaf_rnn=False, bi_leaf_rnn=False, device=None,
+                 pred_dense_layer=False):
+        super(BiCRFTreeLstm, self).__init__(tree_mode, seq_mode, pred_mode, word_dim, num_words, tree_input_dim,
+                                            output_dim, softmax_in_dim, seq_layer_num, num_labels,
+                                            embedd_word=embedd_word, embedd_trainable=embedd_trainable, p_in=p_in,
+                                            p_leaf=p_leaf, p_tree=p_tree, p_pred=p_pred, leaf_rnn=leaf_rnn,
+                                            bi_leaf_rnn=bi_leaf_rnn, device=device, pred_dense_layer=pred_dense_layer)
+
+        self.crf = BinaryTreeCRF(output_dim, num_labels, attention=False, pred_mode=pred_mode,
+                                 only_bu=True, softmax_in_dim=softmax_in_dim)
         self.ce_loss = None
         self.pred_layer = None
         self.pred = None
