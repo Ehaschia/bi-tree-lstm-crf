@@ -40,11 +40,11 @@ class TreeCRF(nn.Module):
             # test
             input_size = input_size if self.only_bu else 2*input_size
             self.generate_pred_layer(input_size, softmax_in_dim, num_labels)
-            self.pred = self.single_h_pred
+            self.get_emission_score = self.single_h_pred
         elif pred_mode == 'avg_h':
             input_size = 2*input_size if self.only_bu else 4 * input_size
             self.generate_pred_layer(input_size, softmax_in_dim, num_labels)
-            self.pred = self.avg_h_pred
+            self.get_emission_score = self.avg_h_pred
 
         elif pred_mode == 'avg_seq_h':
             # TODO

@@ -15,7 +15,7 @@ from module.module_io.logger import *
 from module.module_io.sst_data import *
 from module.nn.tree_lstm import *
 from tensorboardX import SummaryWriter
-
+from module.util import detect_nan
 
 def main():
     parser = argparse.ArgumentParser(description='Tuning with bi-directional Tree-LSTM-CRF')
@@ -57,20 +57,29 @@ def main():
     parser.add_argument('--p_pred', type=float, default=0.5, help='Dropout prob for pred layer')
     parser.add_argument('--lveg_comp', type=int, default=1, help='the component number of mixture gaussian in LVeG')
     parser.add_argument('--gaussian_dim', type=int, default=1, help='the gaussian dim in LVeG')
+    parser.add_argument('--tensorboard', action='store_true')
+    parser.add_argument('--td_name', type=str, default='default', help='the name of this test')
+    parser.add_argument('--td_dir', type=str, required=True)
 
     # load tree
     args = parser.parse_args()
-
+    print(args)
     logger = get_logger("SSTLogger")
 
     batch_size = args.batch_size
     embedd_mode = args.embedding
     model_mode = args.model_mode
     pred_dense_layer = args.pred_dense_layer
-    train_writer = SummaryWriter(log_dir='/home/ehaschia/Code/bi-tree-lstm-crf/log/train')
-    dev_writer = SummaryWriter(log_dir='/home/ehaschia/Code/bi-tree-lstm-crf/log/dev')
+    leaf_rnn = args.leaf_lstm
+    bi_rnn = args.bi_leaf_lstm
+    if args.tensorboard:
+        summary_writer = SummaryWriter(log_dir=args.td_dir+'/' + args.td_name)
+    else:
+        summary_writer = None
 
     def add_scalar_summary(summary_writer, name, value, step):
+        if summary_writer is None:
+            return
         if torch.is_tensor(value):
             value = value.item()
         summary_writer.add_scalar(tag=name, scalar_value=value,
@@ -129,44 +138,44 @@ def main():
         network = TreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                            args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num, args.num_labels,
                            embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf, p_tree=args.p_tree,
-                           p_pred=args.p_pred, leaf_rnn=True, bi_leaf_rnn=True, device=device,
+                           p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn, device=device,
                            pred_dense_layer=pred_dense_layer).to(device)
     elif model_mode == 'BiTreeLSTM':
         network = BiTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                              args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num, args.num_labels,
                              embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf, p_tree=args.p_tree,
-                             p_pred=args.p_pred, leaf_rnn=True, bi_leaf_rnn=True, device=device,
+                             p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn, device=device,
                              pred_dense_layer=pred_dense_layer).to(device)
     elif model_mode == 'CRFTreeLSTM':
         network = CRFTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                               args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num, args.num_labels,
                               embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf, p_tree=args.p_tree,
-                              p_pred=args.p_pred, leaf_rnn=True, bi_leaf_rnn=True, device=device,
+                              p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn, device=device,
                               pred_dense_layer=pred_dense_layer).to(device)
     elif model_mode == 'CRFBiTreeLSTM':
         network = CRFBiTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                                 args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
                                 args.num_labels, embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
-                                p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=True, bi_leaf_rnn=True,
+                                p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn,
                                 device=device, pred_dense_layer=pred_dense_layer).to(device)
     elif model_mode == 'LVeGTreeLSTM':
         network = LVeGTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                                args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
                                args.num_labels, embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
-                               p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=True, bi_leaf_rnn=True,
+                               p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn,
                                device=device, comp=args.lveg_comp, g_dim=args.gaussian_dim,
                                pred_dense_layer=pred_dense_layer).to(device)
     elif model_mode == 'LVeGBiTreeLSTM':
         network = LVeGBiTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                                  args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
                                  args.num_labels, embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
-                                 p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=True, bi_leaf_rnn=True,
+                                 p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn,
                                  device=device, comp=args.lveg_comp, g_dim=args.gaussian_dim).to(device)
     elif model_mode == 'BiCRFBiTreeLSTM':
         network = BiCRFBiTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                                   args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
                                   args.num_labels, embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
-                                  p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=True, bi_leaf_rnn=True,
+                                  p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn,
                                   device=device, pred_dense_layer=pred_dense_layer).to(device)
     else:
         raise NotImplementedError
@@ -245,7 +254,7 @@ def main():
         logger.info('train: %d/%d loss: %.4f, time used : %.2fs' % (
             epoch, args.epoch, train_err / len(train_dataset), train_time))
 
-        add_scalar_summary(train_writer, 'loss', train_err / len(train_dataset), epoch)
+        add_scalar_summary(summary_writer, 'loss', train_err / len(train_dataset), epoch)
 
         network.eval()
         dev_s_corr = 0.0
@@ -264,8 +273,8 @@ def main():
 
         time.sleep(1)
 
-        add_scalar_summary(dev_writer, 'phase acc', (dev_p_corr * 100 / dev_p_total), epoch)
-        add_scalar_summary(dev_writer, 'sents acc', (dev_s_corr * 100 / dev_s_total), epoch)
+        add_scalar_summary(summary_writer, 'phase acc', (dev_p_corr * 100 / dev_p_total), epoch)
+        add_scalar_summary(summary_writer, 'sents acc', (dev_s_corr * 100 / dev_s_total), epoch)
 
         print('dev phase acc: %.2f%%, dev sents acc: %.2f%%' % (dev_p_corr * 100 / dev_p_total,
                                                                 dev_s_corr * 100 / dev_s_total))

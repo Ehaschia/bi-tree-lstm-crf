@@ -23,16 +23,15 @@ class TreeLstm(nn.Module):
                  softmax_in_dim, seq_layer_num, num_labels, embedd_word=None, embedd_trainable=True,
                  p_in=0.5, p_leaf=0.5, p_tree=0.5, p_pred=0.5, leaf_rnn=False, bi_leaf_rnn=False, device=None,
                  pred_dense_layer=False):
-        # TODO Attention
         super(TreeLstm, self).__init__()
-
         if tree_mode == 'SLSTM':
-            self.bu_rnn_cell = BinarySLSTMCell(tree_input_dim, output_dim)
+            self.bu_rnn_cell = BinarySLSTMCell(tree_input_dim, output_dim, p_tree=p_tree)
         elif tree_mode == 'TreeLSTM':
-            # alert here input size
-            self.bu_rnn_cell = BinaryTreeLSTMCell(tree_input_dim, output_dim)
+            head_word_dim = tree_input_dim if leaf_rnn else word_dim
+            self.bu_rnn_cell = BinaryTreeLSTMCell(head_word_dim, output_dim, p_tree=p_tree)
+            # self.bu_rnn_cell = TreeLSTMCell_flod(word_dim, output_dim, p_tree=p_tree)
         elif tree_mode == "BUTreeLSTM":
-            self.bu_rnn_cell = BUSLSTMCell(word_dim, tree_input_dim, output_dim)
+            self.bu_rnn_cell = BUSLSTMCell(word_dim, tree_input_dim, output_dim, p_tree=p_tree)
         else:
             raise NotImplementedError("the tree model " + tree_mode + " is not implemented!")
 
@@ -84,7 +83,9 @@ class TreeLstm(nn.Module):
         else:
             self.rnn = None
             # alert non-linear layer?
-            self.leaf_affine = nn.Linear(word_dim, tree_input_dim)
+            self.leaf_affine = None
+            if tree_mode == 'SLSTM':
+                self.leaf_affine = nn.Linear(word_dim, tree_input_dim)
 
     def generate_pred_layer(self, input_size, softmax_in_dim, num_labels):
         if self.pred_dense_layer:
@@ -104,25 +105,32 @@ class TreeLstm(nn.Module):
 
         if tree.is_leaf():
             if self.tree_mode == 'SLSTM':
-                h = seq_out[tree.idx].unsqueeze(0)
-                c = h.detach().new(1, self.tree_input_dim).fill_(0.).requires_grad_()
+                if self.leaf_affine is not None:
+                    h = self.leaf_affine(seq_out[tree.idx])
+                else:
+                    h = seq_out[tree.idx]
+                c = h.detach().new(self.tree_input_dim).fill_(0.).requires_grad_()
                 tree.bu_state = {'h': h, 'c': c}
             elif self.tree_mode == 'TreeLSTM':
                 # because here the framework only depend on leaf input, so here inputs is seq_out
                 # may be we can use word embedding?
                 inputs = seq_out[tree.idx]
-                l_c = inputs.detach().new(1, self.tree_input_dim).fill_(0.).requires_grad_()
-                r_c = inputs.detach().new(1, self.tree_input_dim).fill_(0.).requires_grad_()
+                l_c = inputs.detach().new(self.tree_input_dim).fill_(0.).requires_grad_()
+                r_c = inputs.detach().new(self.tree_input_dim).fill_(0.).requires_grad_()
 
-                l_h = inputs.detach().new(1, self.tree_input_dim).fill_(0.).requires_grad_()
-                r_h = inputs.detach().new(1, self.tree_input_dim).fill_(0.).requires_grad_()
+                l_h = inputs.detach().new(self.tree_input_dim).fill_(0.).requires_grad_()
+                r_h = inputs.detach().new(self.tree_input_dim).fill_(0.).requires_grad_()
                 l = {'h': l_h, 'c': l_c}
                 r = {'h': r_h, 'c': r_c}
                 tree.bu_state = self.bu_rnn_cell(l, r, inputs=inputs)
             elif self.tree_mode == 'BUTreeLSTM':
                 inputs = embedding[tree.idx]
                 c = inputs.detach().new(self.tree_input_dim).fill_(0.).requires_grad_()
-                tree.bu_state = {'x': inputs, 'h': seq_out[tree.idx], 'c': c}
+                if self.rnn is not None:
+                    tree.bu_state = {'x': inputs, 'h': seq_out[tree.idx], 'c': c}
+                else:
+                    h = inputs.detach().new(self.tree_input_dim).fill_(0.).requires_grad_()
+                    tree.bu_state = {'x': inputs, 'h': h, 'c': c}
             else:
                 raise NotImplementedError("the tree model " + self.tree_mode + " is not implemented!")
         else:
@@ -224,7 +232,7 @@ class BiTreeLstm(TreeLstm):
         self.td_rnn_cell = TDLSTMCell(word_dim, tree_input_dim, output_dim)
 
         if pred_mode == 'single_h':
-            self.generate_pred_layer(output_dim, softmax_in_dim, num_labels)
+            self.generate_pred_layer(2*output_dim, softmax_in_dim, num_labels)
             self.pred = self.single_h_pred
         elif pred_mode == 'avg_h':
             self.generate_pred_layer(4*output_dim, softmax_in_dim, num_labels)
@@ -291,7 +299,11 @@ class BiTreeLstm(TreeLstm):
         if tree.is_leaf():
             inputs = embedding[tree.idx]
             c = inputs.detach().new(self.tree_input_dim).fill_(0.).requires_grad_()
-            tree.bu_state = {'x': inputs, 'h': seq_out[tree.idx], 'c': c}
+            if self.rnn is not None:
+                tree.bu_state = {'x': inputs, 'h': seq_out[tree.idx], 'c': c}
+            else:
+                h = inputs.detach().new(self.tree_input_dim).fill_(0.).requires_grad_()
+                tree.bu_state = {'x': inputs, 'h': h, 'c': c}
         else:
             assert len(tree.children) == 2
             inputs = None
