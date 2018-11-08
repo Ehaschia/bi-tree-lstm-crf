@@ -231,6 +231,35 @@ class BinarySLSTMCell(nn.Module):
         return {'h': h_t.squeeze(0), 'c': c_t.squeeze(0)}
 
 
+class BinarySLSTMCell_chain(nn.Module):
+    # implement SLSTM follow the chain
+    # http://docs.chainer.org/en/stable/reference/generated/chainer.functions.slstm.html
+    def __init__(self, input_dim, out_dim, p_tree=0.0):
+        super(BinarySLSTMCell_chain, self).__init__()
+        self.left_w = nn.Linear(input_dim, 4*out_dim)
+        self.left_v = nn.Linear(input_dim, 4*out_dim)
+        self.right_w = nn.Linear(input_dim, 4*out_dim)
+        self.right_v = nn.Linear(input_dim, 4*out_dim)
+        self.tree_dropout = nn.Dropout(p_tree)
+
+    def forward(self, l, r, inputs=None):
+        l_h, l_c = l['h'].unsqueeze(0), l['c'].unsqueeze(0)
+        r_h, r_c = r['h'].unsqueeze(0), r['c'].unsqueeze(0)
+
+        l_x = self.left_v(l_h) + self.left_w(l_c)
+        r_x = self.right_v(r_h) + self.right_w(r_c)
+
+        l_a, l_i, l_f, l_o = l_x.chunk(4, dim=1)
+        r_a, r_i, r_f, r_o = r_x.chunk(4, dim=1)
+
+        o = torch.sigmoid(l_o + r_o)
+        c = torch.tanh(l_a) * torch.sigmoid(l_i) + \
+            torch.tanh(r_a) * torch.sigmoid(r_i) + \
+            torch.sigmoid(l_f) * l_c + torch.sigmoid(r_f) * r_c
+        h = o * torch.tanh(c)
+
+        return {'h': h.squeeze(0), 'c': c.squeeze(0)}
+
 class BUSLSTMCell(nn.Module):
     # based on https://www.transacl.org/ojs/index.php/tacl/article/view/925
     # implement dropout http://arxiv.org/pdf/1603.05118.pdf
