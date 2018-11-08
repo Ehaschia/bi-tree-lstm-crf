@@ -134,6 +134,7 @@ def main():
         return torch.from_numpy(table)
 
     word_table = construct_word_embedding_table()
+    embedd_dict = None
     logger.info("constructing network...")
     if model_mode == 'TreeLSTM':
         network = TreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
