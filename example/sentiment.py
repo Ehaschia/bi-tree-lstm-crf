@@ -262,7 +262,7 @@ def main():
         logger.info('train: %d/%d loss: %.4f, time used : %.2fs' % (
             epoch, args.epoch, train_err / len(train_dataset), train_time))
 
-        add_scalar_summary(summary_writer, 'loss', train_err / len(train_dataset), epoch)
+        add_scalar_summary(summary_writer, 'train/loss', train_err / len(train_dataset), epoch)
 
         network.eval()
         dev_s_corr = 0.0
@@ -281,8 +281,8 @@ def main():
 
         time.sleep(1)
 
-        add_scalar_summary(summary_writer, 'phase acc', (dev_p_corr * 100 / dev_p_total), epoch)
-        add_scalar_summary(summary_writer, 'sents acc', (dev_s_corr * 100 / dev_s_total), epoch)
+        add_scalar_summary(summary_writer, 'dev/phase acc', (dev_p_corr * 100 / dev_p_total), epoch)
+        add_scalar_summary(summary_writer, 'dev/sents acc', (dev_s_corr * 100 / dev_s_total), epoch)
 
         print('dev phase acc: %.2f%%, dev sents acc: %.2f%%' % (dev_p_corr * 100 / dev_p_total,
                                                                 dev_s_corr * 100 / dev_s_total))
@@ -317,6 +317,8 @@ def main():
             dev_p_correct * 100 / dev_p_total, dev_s_correct * 100 / dev_s_total, best_epoch))
         print("best tst phase corr: %.2f%%, sents acc: %.2f%% (epoch: %d)" % (
             test_p_correct * 100 / test_p_total, test_s_correct * 100 / len(test_dataset), best_epoch))
+        add_scalar_summary(summary_writer, 'test/phase acc', (test_p_correct * 100 / test_p_total), epoch)
+        add_scalar_summary(summary_writer, 'test/sents acc', (test_s_correct * 100 / len(test_dataset)), epoch)
         if optim_method == "SGD" and epoch % schedule == 0:
             lr = learning_rate / (1.0 + epoch * decay_rate)
             optimizer = optim.SGD(network.parameters(), lr=lr, momentum=momentum, weight_decay=gamma, nesterov=True)
