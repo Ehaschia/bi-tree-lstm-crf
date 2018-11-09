@@ -37,6 +37,8 @@ class BinaryTreeLSTMCell(nn.Module):
         r_h, r_c = r['h'].unsqueeze(0), r['c'].unsqueeze(0)
         if inputs is None:
             inputs = l_h.detach().new(1, self.in_dim).fill_(0.).requires_grad_()
+        else:
+            inputs = inputs.unsqueeze(0)
         child_h = torch.cat([l_h, r_h], dim=dim)
         child_c = torch.cat([l_c, r_c], dim=dim)
         child_h_sum = torch.sum(child_h, dim=dim, keepdim=True)
@@ -76,6 +78,8 @@ class TreeLSTMCell_flod(nn.Module):
         r_h, r_c = r['h'].unsqueeze(0), r['c'].unsqueeze(0)
         if inputs is None:
             inputs = l_h.detach().new(1, self.in_dim).fill_(0.).requires_grad_()
+        else:
+            inputs = inputs.unsqueeze(0)
         h_concat = torch.cat([inputs, l_h, r_h], dim=1)
         concat = self.ifoux(h_concat)
         i, j, l_f, r_f, o = torch.split(concat, concat.size()[1] // 5, dim=1)

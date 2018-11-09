@@ -30,7 +30,7 @@ class TreeLstm(nn.Module):
         elif tree_mode == 'TreeLSTM':
             head_word_dim = tree_input_dim if leaf_rnn else word_dim
             # self.bu_rnn_cell = BinaryTreeLSTMCell(head_word_dim, output_dim, p_tree=p_tree)
-            self.bu_rnn_cell = TreeLSTMCell_flod(word_dim, output_dim, p_tree=p_tree)
+            self.bu_rnn_cell = TreeLSTMCell_flod(head_word_dim, output_dim, p_tree=p_tree)
         elif tree_mode == "BUTreeLSTM":
             self.bu_rnn_cell = BUSLSTMCell(word_dim, tree_input_dim, output_dim, p_tree=p_tree)
         else:

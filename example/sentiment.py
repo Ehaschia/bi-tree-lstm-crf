@@ -180,7 +180,7 @@ def main():
                                   p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn,
                                   device=device, pred_dense_layer=pred_dense_layer).to(device)
     elif model_mode == 'BiCRFTreeLSTM':
-        network = CRFBiTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
+        network = BiCRFTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                                 args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
                                 args.num_labels, embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
                                 p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn,
@@ -323,6 +323,10 @@ def main():
             lr = learning_rate / (1.0 + epoch * decay_rate)
             optimizer = optim.SGD(network.parameters(), lr=lr, momentum=momentum, weight_decay=gamma, nesterov=True)
 
+    if args.tensorboard:
+        summary_writer.close()
+    else:
+        pass
 
 if __name__ == '__main__':
     torch.manual_seed(48)
