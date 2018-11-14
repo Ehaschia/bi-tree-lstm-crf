@@ -19,7 +19,6 @@ class Tree(object):
 
         self.crf_cache = {}
         self.lveg_cache = {}
-        self.nn_cache = {}
         self.attention_cache = {}
 
     def add_child(self, child):
@@ -120,10 +119,10 @@ class Tree(object):
         idx = span_idx_part + lenth_idx_part + leftmost_idx
         return int(idx)
 
-    def collect_hidden_state(self, holder, bidirectional=False):
+    def collect_hidden_state(self, holder):
         for idx in range(len(self.children)):
-            self.children[idx].collect_hidden_state(holder, bidirectional=bidirectional)
-        if bidirectional:
+            self.children[idx].collect_hidden_state(holder)
+        if 'h' in self.td_state:
             hidden_state = torch.cat([self.bu_state['h'], self.td_state['h']], dim=0)
         else:
             hidden_state = self.bu_state['h']

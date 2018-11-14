@@ -62,6 +62,8 @@ def main():
     parser.add_argument('--td_dir', type=str, required=True)
     parser.add_argument('--root_acc', choices=['fine_phase', 'fine_sents', 'bin_phase', 'bin_sents'],
                         help='whether update of root or phase.')
+    parser.add_argument('--attention', action='store_true')
+    parser.add_argument('--coattention_dim', type=int, default=150)
 
     # load tree
     args = parser.parse_args()
@@ -75,6 +77,8 @@ def main():
     leaf_rnn = args.leaf_lstm
     bi_rnn = args.bi_leaf_lstm
     root_acc = args.root_acc
+    attention = args.attention
+    coattention_dim = args.coattention_dim
     if args.tensorboard:
         summary_writer = SummaryWriter(log_dir=args.td_dir + '/' + args.td_name)
         summary_writer.add_text('parameters', str(args))
@@ -144,50 +148,55 @@ def main():
                            args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num, args.num_labels,
                            embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf, p_tree=args.p_tree,
                            p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn, device=device,
-                           pred_dense_layer=pred_dense_layer).to(device)
+                           pred_dense_layer=pred_dense_layer, attention=attention, coattention_dim=coattention_dim).to(device)
     elif model_mode == 'BiTreeLSTM':
         network = BiTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                              args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num, args.num_labels,
                              embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf, p_tree=args.p_tree,
                              p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn, device=device,
-                             pred_dense_layer=pred_dense_layer).to(device)
+                             pred_dense_layer=pred_dense_layer, attention=attention, coattention_dim=coattention_dim).to(device)
     elif model_mode == 'CRFTreeLSTM':
         network = CRFTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                               args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num, args.num_labels,
                               embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf, p_tree=args.p_tree,
                               p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn, device=device,
-                              pred_dense_layer=pred_dense_layer).to(device)
+                              pred_dense_layer=pred_dense_layer, attention=attention, coattention_dim=coattention_dim).to(device)
     elif model_mode == 'CRFBiTreeLSTM':
         network = CRFBiTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                                 args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
                                 args.num_labels, embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
                                 p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn,
-                                device=device, pred_dense_layer=pred_dense_layer).to(device)
+                                device=device, pred_dense_layer=pred_dense_layer, attention=attention,
+                                coattention_dim=coattention_dim).to(device)
     elif model_mode == 'LVeGTreeLSTM':
         network = LVeGTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                                args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
                                args.num_labels, embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
                                p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn,
                                device=device, comp=args.lveg_comp, g_dim=args.gaussian_dim,
-                               pred_dense_layer=pred_dense_layer).to(device)
+                               pred_dense_layer=pred_dense_layer, attention=attention,
+                               coattention_dim=coattention_dim).to(device)
     elif model_mode == 'LVeGBiTreeLSTM':
         network = LVeGBiTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                                  args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
                                  args.num_labels, embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
                                  p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn,
-                                 device=device, comp=args.lveg_comp, g_dim=args.gaussian_dim).to(device)
+                                 device=device, comp=args.lveg_comp, g_dim=args.gaussian_dim, attention=attention,
+                                 coattention_dim=coattention_dim).to(device)
     elif model_mode == 'BiCRFBiTreeLSTM':
         network = BiCRFBiTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                                   args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
                                   args.num_labels, embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
                                   p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn,
-                                  device=device, pred_dense_layer=pred_dense_layer).to(device)
+                                  device=device, pred_dense_layer=pred_dense_layer, attention=attention,
+                                  coattention_dim=coattention_dim).to(device)
     elif model_mode == 'BiCRFTreeLSTM':
         network = BiCRFTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                                 args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
                                 args.num_labels, embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
                                 p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn,
-                                device=device, pred_dense_layer=pred_dense_layer).to(device)
+                                device=device, pred_dense_layer=pred_dense_layer, attention=attention,
+                                coattention_dim=coattention_dim).to(device)
     else:
         raise NotImplementedError
 

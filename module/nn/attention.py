@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.parameter import Parameter
+from .tree_lstm_cell import TreeLSTMCell_flod
 
 
 class BiAAttention(nn.Module):
@@ -175,3 +176,100 @@ class ConcatAttention(nn.Module):
         # [batch, length_encoder, length_decoder, num_labels]
         # then --> [batch, num_labels, length_decoder, length_encoder]
         return torch.matmul(out, self.v).transpose(1, 3)
+
+
+class CoAttention(nn.Module):
+
+    def __init__(self, input_dim, mid_dim):
+        # fixme the dimention of softmax
+        super(CoAttention, self).__init__()
+
+        self.softmax1 = nn.Softmax(dim=1)
+        # here I guess only has two tree format
+        # fixme only implement other tree lstm here
+        self.tree_input_dim = input_dim
+        self.tree_output_dim = mid_dim
+        self.tree_cell = TreeLSTMCell_flod(input_dim, mid_dim)
+        self.v = Parameter(torch.Tensor(mid_dim))
+        self.v = Parameter(torch.Tensor(mid_dim))
+
+    def reset_parameters(self):
+        nn.init.xavier_normal_(self.v)
+
+    def recursive_get_attention_state(self, tree, holder):
+        for child in tree.children:
+            self.recursive_get_hidden_state(child, holder)
+
+        holder.append(tree.attention_cache['h'])
+
+    def forward(self, tree):
+        hidden_holder = []
+        tree.collect_hidden_state(hidden_holder)
+        hidden_mat = torch.cat(hidden_holder, dim=0)
+
+        attention_logits = hidden_mat.mm(hidden_mat.t())
+        attention_weights = self.softmax1(attention_logits)
+        # encoded_text = self.weighted_sum(hidden_mat, attention_weights)
+        encoded_text = attention_weights.mm(hidden_mat)
+
+        integrate_cat = torch.cat([hidden_mat, hidden_mat - encoded_text, hidden_mat * encoded_text], dim=-1)
+
+        self.tree_forward(tree, 0, integrate_cat)
+
+    def tree_forward(self, tree, idx, node_state):
+        for child in tree.children:
+            idx = self.tree_forward(child, idx, node_state)
+
+        inputs = node_state[idx]
+        if tree.is_leaf():
+            l_c = inputs.detach().new(self.tree_output_dim).fill_(0.).requires_grad_()
+            r_c = inputs.detach().new(self.tree_output_dim).fill_(0.).requires_grad_()
+
+            l_h = inputs.detach().new(self.tree_output_dim).fill_(0.).requires_grad_()
+            r_h = inputs.detach().new(self.tree_output_dim).fill_(0.).requires_grad_()
+            l = {'h': l_h, 'c': l_c}
+            r = {'h': r_h, 'c': r_c}
+            tree.td_cache = {}
+            tree.bu_cache = self.tree_cell(l, r, inputs)
+        else:
+            l = tree.get_child(0).bu_cache
+            r = tree.get_child(1).bu_cache
+            tree.bu_cache = self.tree_cell(l, r, inputs)
+        return idx + 1
+
+    def weighted_sum(self, matrix: torch.Tensor, attention: torch.Tensor) -> torch.Tensor:
+        """
+        Takes a matrix of vectors and a set of weights over the rows in the matrix (which we call an
+        "attention" vector), and returns a weighted sum of the rows in the matrix.  This is the typical
+        computation performed after an attention mechanism.
+        Note that while we call this a "matrix" of vectors and an attention "vector", we also handle
+        higher-order tensors.  We always sum over the second-to-last dimension of the "matrix", and we
+        assume that all dimensions in the "matrix" prior to the last dimension are matched in the
+        "vector".  Non-matched dimensions in the "vector" must be `directly after the batch dimension`.
+        For example, say I have a "matrix" with dimensions ``(batch_size, num_queries, num_words,
+        embedding_dim)``.  The attention "vector" then must have at least those dimensions, and could
+        have more. Both:
+            - ``(batch_size, num_queries, num_words)`` (distribution over words for each query)
+            - ``(batch_size, num_documents, num_queries, num_words)`` (distribution over words in a
+              query for each document)
+        are valid input "vectors", producing tensors of shape:
+        ``(batch_size, num_queries, embedding_dim)`` and
+        ``(batch_size, num_documents, num_queries, embedding_dim)`` respectively.
+        """
+        # We'll special-case a few settings here, where there are efficient (but poorly-named)
+        # operations in pytorch that already do the computation we need.
+        if attention.dim() == 2 and matrix.dim() == 3:
+            return attention.unsqueeze(1).bmm(matrix).squeeze(1)
+        if attention.dim() == 3 and matrix.dim() == 3:
+            return attention.bmm(matrix)
+        if matrix.dim() - 1 < attention.dim():
+            expanded_size = list(matrix.size())
+            for i in range(attention.dim() - matrix.dim() + 1):
+                matrix = matrix.unsqueeze(1)
+                expanded_size.insert(i + 1, attention.size(i + 1))
+            matrix = matrix.expand(*expanded_size)
+        intermediate = attention.unsqueeze(-1).expand_as(matrix) * matrix
+        return intermediate.sum(dim=-2)
+
+# class Attention(nn.Module):
+#     # TODO

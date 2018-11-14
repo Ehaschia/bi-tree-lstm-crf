@@ -101,7 +101,7 @@ class BinaryTreeLVeG(nn.Module):
     #     self.debug = True
 
     def collect_avg_hidden(self, tree):
-        hidden_collector = tree.collect_hidden_state([], bidirectional=not self.only_bu)
+        hidden_collector = tree.collect_hidden_state([])
         hiddens = torch.cat(hidden_collector[0], dim=0)
         avg_hidden = torch.mean(hiddens, dim=0)
         return avg_hidden
