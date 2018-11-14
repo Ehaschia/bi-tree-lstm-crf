@@ -19,6 +19,8 @@ class Tree(object):
 
         self.crf_cache = {}
         self.lveg_cache = {}
+        self.nn_cache = {}
+        self.attention_cache = {}
 
     def add_child(self, child):
         child.parent = self
@@ -118,9 +120,9 @@ class Tree(object):
         idx = span_idx_part + lenth_idx_part + leftmost_idx
         return int(idx)
 
-    def collect_hidden_state(self, holder, label_holder=None, bidirectional=False):
+    def collect_hidden_state(self, holder, bidirectional=False):
         for idx in range(len(self.children)):
-            self.children[idx].collect_hidden_state(holder, label_holder=label_holder, bidirectional=bidirectional)
+            self.children[idx].collect_hidden_state(holder, bidirectional=bidirectional)
         if bidirectional:
             hidden_state = torch.cat([self.bu_state['h'], self.td_state['h']], dim=0)
         else:
@@ -130,9 +132,7 @@ class Tree(object):
             holder.append(hidden_state.unsqueeze(0))
         else:
             holder.append(hidden_state)
-        if label_holder is not None:
-            label_holder.append(self.label)
-        return holder, label_holder
+        return holder
 
     def collect_golden_labels(self, holder):
         for child in self.children:
@@ -153,3 +153,5 @@ class Tree(object):
         self.td_state = {}
         self.crf_cache = {}
         self.lveg_cache = {}
+        self.nn_cache = {}
+        self.attention_cache = {}

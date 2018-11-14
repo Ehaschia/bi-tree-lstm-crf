@@ -64,7 +64,7 @@ class TreeCRF(nn.Module):
 
     def collect_avg_hidden(self, tree):
         hidden_collector = tree.collect_hidden_state([], bidirectional=not self.only_bu)
-        hiddens = torch.cat(hidden_collector[0], dim=0)
+        hiddens = torch.cat(hidden_collector, dim=0)
         avg_hidden = torch.mean(hiddens, dim=0)
         return avg_hidden
 

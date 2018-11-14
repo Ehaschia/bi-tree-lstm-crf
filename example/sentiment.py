@@ -60,6 +60,8 @@ def main():
     parser.add_argument('--tensorboard', action='store_true')
     parser.add_argument('--td_name', type=str, default='default', help='the name of this test')
     parser.add_argument('--td_dir', type=str, required=True)
+    parser.add_argument('--root_acc', choices=['fine_phase', 'fine_sents', 'bin_phase', 'bin_sents'],
+                        help='whether update of root or phase.')
 
     # load tree
     args = parser.parse_args()
@@ -72,6 +74,7 @@ def main():
     pred_dense_layer = args.pred_dense_layer
     leaf_rnn = args.leaf_lstm
     bi_rnn = args.bi_leaf_lstm
+    root_acc = args.root_acc
     if args.tensorboard:
         summary_writer = SummaryWriter(log_dir=args.td_dir + '/' + args.td_name)
         summary_writer.add_text('parameters', str(args))
@@ -215,13 +218,18 @@ def main():
         raise NotImplementedError("Not Implement optim Method: " + optim_method)
     logger.info("Optim mode: " + optim_method)
 
-    # alert here best for max p correct
     dev_p_correct = 0.0
     dev_s_correct = 0.0
+    dev_bin_p_correct = 0.0
+    dev_bin_s_correct = 0.0
     best_epoch = 0
     test_p_correct = 0.0
     test_s_correct = 0.0
     test_p_total = 0
+    test_bin_s_total = 0.0
+    test_bin_p_total = 0.0
+    test_bin_p_correct = 0.0
+    test_bin_s_correct = 0.0
     for epoch in range(1, args.epoch + 1):
         train_dataset.shuffle()
 
@@ -269,56 +277,101 @@ def main():
         dev_p_corr = 0.0
         dev_s_total = len(dev_dataset)
         dev_p_total = 0
+        dev_bin_p_total = 0.0
+        dev_bin_s_total = 0.0
+        dev_bin_p_corr = 0.0
+        dev_bin_s_corr = 0.0
         for i in tqdm(range(len(dev_dataset))):
             tree = dev_dataset[i]
-            p_corr, preds = network.predict(tree)
+            p_corr, preds, bin_corr, bin_preds, bin_mask = network.predict(tree)
 
             dev_p_total += preds.size()[0]
             dev_p_corr += p_corr.sum().item()
             dev_s_corr += p_corr[-1].item()
 
+            if tree.label != 2:
+                dev_bin_p_corr += bin_corr.sum().item()
+                dev_bin_p_total += bin_mask.sum().item()
+                dev_bin_s_corr += bin_corr[-1].item()
+                dev_bin_s_total += 1.0
+
             tree.clean()
 
         time.sleep(1)
 
-        add_scalar_summary(summary_writer, 'dev/phase acc', (dev_p_corr * 100 / dev_p_total), epoch)
-        add_scalar_summary(summary_writer, 'dev/sents acc', (dev_s_corr * 100 / dev_s_total), epoch)
+        add_scalar_summary(summary_writer, 'dev/fine phase acc', (dev_p_corr * 100 / dev_p_total), epoch)
+        add_scalar_summary(summary_writer, 'dev/fine sents acc', (dev_s_corr * 100 / dev_s_total), epoch)
+        add_scalar_summary(summary_writer, 'dev/binary phase acc', (dev_bin_p_corr * 100 / dev_bin_p_total), epoch)
+        add_scalar_summary(summary_writer, 'dev/binary sents acc', (dev_bin_s_corr * 100 / dev_bin_s_total), epoch)
 
-        print('dev phase acc: %.2f%%, dev sents acc: %.2f%%' % (dev_p_corr * 100 / dev_p_total,
-                                                                dev_s_corr * 100 / dev_s_total))
-        # alert here we use p max
+        print('dev phase acc: %.2f%%, dev sents acc: %.2f%%, binary phase acc: %.2f%%, dev sents acc: %.2f%%'
+              % (dev_p_corr * 100 / dev_p_total, dev_s_corr * 100 / dev_s_total,
+                 dev_bin_p_corr * 100 / dev_bin_p_total, dev_bin_s_corr * 100 / dev_bin_s_total))
+
+        if root_acc == 'fine_sents':
+            update = True if dev_s_corr > dev_s_correct else False
+        elif root_acc == 'fine_phase':
+            update = True if dev_p_corr > dev_p_correct else False
+        elif root_acc == 'bin_phase':
+            update = True if dev_bin_p_corr > dev_bin_p_correct else False
+        elif root_acc == 'bin_sents':
+            update = True if dev_bin_s_corr > dev_bin_s_correct else False
+        else:
+            raise NotImplementedError
         # if dev_s_corr > dev_s_correct:
-        if dev_p_corr > dev_p_correct:
+
+        if update:
             dev_p_correct = dev_p_corr
             dev_s_correct = dev_s_corr
+            dev_bin_p_correct = dev_bin_p_corr
+            dev_bin_s_correct = dev_bin_s_corr
             best_epoch = epoch
             test_p_correct = 0.0
             test_s_correct = 0.0
             test_p_total = 0
+            test_bin_s_total = 0.0
+            test_bin_p_total = 0.0
+            test_bin_p_correct = 0.0
+            test_bin_s_correct = 0.0
 
             time.sleep(1)
 
             for i in tqdm(range(len(test_dataset))):
                 tree = test_dataset[i]
-                p_corr, preds = network.predict(tree)
+                p_corr, preds, bin_corr, bin_preds, bin_mask = network.predict(tree)
 
                 test_p_total += preds.size()[0]
                 test_p_correct += p_corr.sum().item()
                 test_s_correct += p_corr[-1].item()
 
+                if tree.label != 2:
+                    test_bin_p_correct += bin_corr.sum().item()
+                    test_bin_p_total += bin_mask.sum().item()
+                    test_bin_s_correct += bin_corr[-1].item()
+                    test_bin_s_total += 1.0
+
                 tree.clean()
 
             time.sleep(1)
 
-            print('test phase acc: %.2f%%, test sents acc: %.2f%%' % (test_p_correct * 100 / test_p_total,
-                                                                      test_s_correct * 100 / len(test_dataset)))
+            print('test phase acc: %.2f%%, test sents acc: %.2f%%, binary phase acc: %.2f%%, binary sents acc: %.2f%%'
+                  % (test_p_correct * 100 / test_p_total, test_s_correct * 100 / len(test_dataset),
+                     test_bin_p_correct * 100 / test_bin_p_total, test_bin_s_correct * 100 / test_bin_s_total))
 
-        print("best dev phase acc: %.2f%%, sents acc: %.2f%% (epoch: %d)" % (
-            dev_p_correct * 100 / dev_p_total, dev_s_correct * 100 / dev_s_total, best_epoch))
-        print("best tst phase corr: %.2f%%, sents acc: %.2f%% (epoch: %d)" % (
-            test_p_correct * 100 / test_p_total, test_s_correct * 100 / len(test_dataset), best_epoch))
-        add_scalar_summary(summary_writer, 'test/phase acc', (test_p_correct * 100 / test_p_total), epoch)
-        add_scalar_summary(summary_writer, 'test/sents acc', (test_s_correct * 100 / len(test_dataset)), epoch)
+        print("best dev phase acc: %.2f%%, sents acc: %.2f%%, binary phase acc: %.2f%%, sents acc: %.2f%% (epoch: %d)" % (
+            dev_p_correct * 100 / dev_p_total, dev_s_correct * 100 / dev_s_total,
+            dev_bin_p_correct *100 / dev_bin_p_total, dev_bin_s_correct * 100 / dev_bin_s_total,
+            best_epoch))
+        print("best tst phase corr: %.2f%%, sents acc: %.2f%%, binary phase acc: %.2f%%, sents acc: %.2f%% (epoch: %d)" % (
+            test_p_correct * 100 / test_p_total, test_s_correct * 100 / len(test_dataset),
+            test_bin_p_correct * 100 / test_bin_p_total,  test_bin_s_correct * 100 / test_bin_s_total,
+            best_epoch))
+
+        add_scalar_summary(summary_writer, 'test/fine phase acc', (test_p_correct * 100 / test_p_total), epoch)
+        add_scalar_summary(summary_writer, 'test/fine sents acc', (test_s_correct * 100 / len(test_dataset)), epoch)
+        add_scalar_summary(summary_writer, 'test/binary phase acc', (test_bin_p_correct * 100 / test_bin_p_total), epoch)
+        add_scalar_summary(summary_writer, 'test/binary sents acc', (test_bin_s_correct * 100 / test_bin_s_total), epoch)
+
         if optim_method == "SGD" and epoch % schedule == 0:
             lr = learning_rate / (1.0 + epoch * decay_rate)
             optimizer = optim.SGD(network.parameters(), lr=lr, momentum=momentum, weight_decay=gamma, nesterov=True)

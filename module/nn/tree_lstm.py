@@ -48,7 +48,6 @@ class TreeLstm(nn.Module):
         self.leaf_rnn = leaf_rnn
         self.tree_mode = tree_mode
         self.pred_mode = pred_mode
-        self.target = []
         # self.softmax = nn.LogSoftmax(dim=1)
         self.pred_dense_layer = pred_dense_layer
         self.dense_softmax = None
@@ -142,9 +141,8 @@ class TreeLstm(nn.Module):
             tree.bu_state = self.bu_rnn_cell(l, r, inputs=inputs)
 
     def collect_hidden_state(self, tree, bidirectional=False):
-        hidden_collector, self.target = tree.collect_hidden_state([], label_holder=[], bidirectional=bidirectional)
+        hidden_collector = tree.collect_hidden_state([], bidirectional=bidirectional)
         hiddens = torch.cat(hidden_collector, dim=0)
-        self.target = torch.from_numpy(np.array(self.target))
         return hiddens
 
     def single_h_pred(self, tree, seq_out):
@@ -207,14 +205,27 @@ class TreeLstm(nn.Module):
         seq_output = self.forward(tree)
         # pred part
         pred_score = self.pred(tree, seq_output)
-        loss = self.ce_loss(pred_score, self.target.view(-1).to(self.device))
-        return loss.mean()
+        target = tree.collect_golden_labels([])
+        target = torch.LongTensor(target)
+        loss = self.ce_loss(pred_score, target.view(-1).to(self.device))
+        return loss
 
     def predict(self, tree):
         seq_output = self.forward(tree)
         pred_score = self.pred(tree, seq_output)
         preds = torch.argmax(pred_score, dim=1).cpu()
-        return torch.eq(preds, self.target).float(), preds
+        target = tree.collect_golden_labels([])
+        target = torch.LongTensor(target)
+
+        # fine gain target
+        corr = torch.eq(preds, target).float()
+
+        # binary target
+        binary_mask = target.ne(2)
+        binary_preds = ((pred_score[:, 3] + pred_score[:, 4]) > (pred_score[:, 1] + pred_score[:, 2])).cpu()
+        binary_lables = target > 2
+        binary_corr = (torch.eq(binary_preds, binary_lables) * binary_mask).float()
+        return corr, preds, binary_corr, binary_preds, binary_mask
 
 
 class BiTreeLstm(TreeLstm):
@@ -246,9 +257,8 @@ class BiTreeLstm(TreeLstm):
             raise NotImplementedError("the pred model " + pred_mode + " is not implemented!")
 
     def collect_hidden_state(self, tree, bidirectional=True):
-        hidden_collector, self.target = tree.collect_hidden_state([], label_holder=[], bidirectional=bidirectional)
+        hidden_collector = tree.collect_hidden_state([], bidirectional=bidirectional)
         hiddens = torch.cat(hidden_collector, dim=0)
-        self.target = torch.from_numpy(np.array(self.target))
         return hiddens
 
     def generate_pred_layer(self, input_size, softmax_in_dim, num_labels):
@@ -381,7 +391,14 @@ class CRFTreeLstm(TreeLstm):
         preds = torch.Tensor(preds).cpu()
         target = tree.collect_golden_labels([])
         target = torch.Tensor(target)
-        return torch.eq(preds, target).float(), preds
+        # fine gain target
+        corr = torch.eq(preds, target).float()
+        # binary target
+        binary_mask = target.ne(2)
+        binary_preds = preds > 2
+        binary_lables = target > 2
+        binary_corr = (torch.eq(binary_preds, binary_lables) * binary_mask).float()
+        return corr, preds, binary_corr, binary_preds, binary_mask
 
 
 class CRFBiTreeLstm(BiTreeLstm):
@@ -413,7 +430,14 @@ class CRFBiTreeLstm(BiTreeLstm):
         preds = torch.Tensor(preds).cpu()
         target = tree.collect_golden_labels([])
         target = torch.Tensor(target)
-        return torch.eq(preds, target).float(), preds
+        # fine gain target
+        corr = torch.eq(preds, target).float()
+        # binary target
+        binary_mask = target.ne(2)
+        binary_preds = preds > 2
+        binary_lables = target > 2
+        binary_corr = (torch.eq(binary_preds, binary_lables) * binary_mask).float()
+        return corr, preds, binary_corr, binary_preds, binary_mask
 
 
 class LVeGBiTreeLstm(BiTreeLstm):
@@ -447,7 +471,15 @@ class LVeGBiTreeLstm(BiTreeLstm):
         preds = torch.Tensor(preds)
         target = tree.collect_golden_labels([])
         target = torch.Tensor(target)
-        return torch.eq(preds, target).float(), preds
+        # fine gain target
+        corr = torch.eq(preds, target).float()
+
+        # binary target
+        binary_mask = target.ne(2)
+        binary_preds = preds > 2
+        binary_lables = target > 2
+        binary_corr = (torch.eq(binary_preds, binary_lables) * binary_mask).float()
+        return corr, preds, binary_corr, binary_preds, binary_mask
 
 
 class LVeGTreeLstm(TreeLstm):
@@ -481,7 +513,15 @@ class LVeGTreeLstm(TreeLstm):
         preds = torch.Tensor(preds).cpu()
         target = tree.collect_golden_labels([])
         target = torch.Tensor(target)
-        return torch.eq(preds, target).float(), preds
+        # fine gain target
+        corr = torch.eq(preds, target).float()
+
+        # binary target
+        binary_mask = target.ne(2)
+        binary_preds = preds > 2
+        binary_lables = target > 2
+        binary_corr = (torch.eq(binary_preds, binary_lables) * binary_mask).float()
+        return corr, preds, binary_corr, binary_preds, binary_mask
 
 
 class BiCRFBiTreeLstm(BiTreeLstm):
@@ -513,7 +553,15 @@ class BiCRFBiTreeLstm(BiTreeLstm):
         preds = torch.Tensor(preds).cpu()
         target = tree.collect_golden_labels([])
         target = torch.Tensor(target)
-        return torch.eq(preds, target).float(), preds
+        # fine gain target
+        corr = torch.eq(preds, target).float()
+
+        # binary target
+        binary_mask = target.ne(2)
+        binary_preds = preds > 2
+        binary_lables = target > 2
+        binary_corr = (torch.eq(binary_preds, binary_lables) * binary_mask).float()
+        return corr, preds, binary_corr, binary_preds, binary_mask
 
 
 class BiCRFTreeLstm(TreeLstm):
@@ -545,4 +593,12 @@ class BiCRFTreeLstm(TreeLstm):
         preds = torch.Tensor(preds).cpu()
         target = tree.collect_golden_labels([])
         target = torch.Tensor(target)
-        return torch.eq(preds, target).float(), preds
+        # fine gain target
+        corr = torch.eq(preds, target).float()
+
+        # binary target
+        binary_mask = target.ne(2)
+        binary_preds = preds > 2
+        binary_lables = target > 2
+        binary_corr = (torch.eq(binary_preds, binary_lables) * binary_mask).float()
+        return corr, preds, binary_corr, binary_preds, binary_mask
