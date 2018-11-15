@@ -152,5 +152,3 @@ class Tree(object):
         self.td_state = {}
         self.crf_cache = {}
         self.lveg_cache = {}
-        self.nn_cache = {}
-        self.attention_cache = {}

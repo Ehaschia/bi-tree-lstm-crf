@@ -31,7 +31,7 @@ class TreeCRF(nn.Module):
         self.num_labels = num_labels
         self.use_attention = attention
         self.trans_matrix = Parameter(torch.Tensor(self.num_labels, self.num_labels))
-        self.only_bu = only_bu
+        self.only_bu = self.use_attention or only_bu
         self.need_pred_dense = need_pred_dense
         self.dense_softmax = None
         self.pred_layer = None
@@ -221,7 +221,7 @@ class BinaryTreeCRF(nn.Module):
         self.num_labels = num_labels
         self.use_attention = attention
         self.trans_matrix = Parameter(torch.Tensor(self.num_labels, self.num_labels, self.num_labels))
-        self.only_bu = only_bu
+        self.only_bu = self.use_attention or only_bu
 
         if pred_mode == 'single_h':
             if self.only_bu:

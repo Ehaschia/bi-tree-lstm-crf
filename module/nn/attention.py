@@ -190,17 +190,6 @@ class CoAttention(nn.Module):
         self.tree_input_dim = input_dim
         self.tree_output_dim = mid_dim
         self.tree_cell = TreeLSTMCell_flod(input_dim, mid_dim)
-        self.v = Parameter(torch.Tensor(mid_dim))
-        self.v = Parameter(torch.Tensor(mid_dim))
-
-    def reset_parameters(self):
-        nn.init.xavier_normal_(self.v)
-
-    def recursive_get_attention_state(self, tree, holder):
-        for child in tree.children:
-            self.recursive_get_hidden_state(child, holder)
-
-        holder.append(tree.attention_cache['h'])
 
     def forward(self, tree):
         hidden_holder = []
@@ -229,12 +218,13 @@ class CoAttention(nn.Module):
             r_h = inputs.detach().new(self.tree_output_dim).fill_(0.).requires_grad_()
             l = {'h': l_h, 'c': l_c}
             r = {'h': r_h, 'c': r_c}
-            tree.td_cache = {}
-            tree.bu_cache = self.tree_cell(l, r, inputs)
+            tree.td_state = {}
+            tree.bu_state = self.tree_cell(l, r, inputs)
         else:
-            l = tree.get_child(0).bu_cache
-            r = tree.get_child(1).bu_cache
-            tree.bu_cache = self.tree_cell(l, r, inputs)
+            l = tree.get_child(0).bu_state
+            r = tree.get_child(1).bu_state
+            tree.td_state = {}
+            tree.bu_state = self.tree_cell(l, r, inputs)
         return idx + 1
 
     def weighted_sum(self, matrix: torch.Tensor, attention: torch.Tensor) -> torch.Tensor:
