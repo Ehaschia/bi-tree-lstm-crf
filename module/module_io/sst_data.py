@@ -169,7 +169,7 @@ class SSTDataloader(object):
                 blank_idx = sub_line.find(' ')
                 label, str_word = int(sub_line[:blank_idx]), sub_line[blank_idx + 1:]
                 self.__word_alphabet.add(str_word)
-                return Tree(label, word=self.__word_alphabet.get_idx(str_word))
+                return Tree(label, word=self.__word_alphabet.get_idx(str_word), str_word=str_word)
             else:
                 blank_idx = sub_line.find(' ')
                 label, str_children = int(sub_line[:blank_idx]), sub_line[blank_idx + 1:]

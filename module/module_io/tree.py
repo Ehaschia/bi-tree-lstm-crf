@@ -5,7 +5,7 @@ import torch
 
 class Tree(object):
 
-    def __init__(self, label, word=None, idx=None):
+    def __init__(self, label, word=None, idx=None, str_word=None):
         self.parent = None
         self.label = label
         self.children = []
@@ -16,7 +16,7 @@ class Tree(object):
         self.idx = idx
         self.bu_state = {}
         self.td_state = {}
-
+        self.str_word = str_word
         self.crf_cache = {}
         self.lveg_cache = {}
         self.attention_cache = {}
@@ -60,6 +60,21 @@ class Tree(object):
             sents += child.get_yield().tolist()
         self.length = len(sents)
         return np.array(sents)
+
+    def get_str_yield(self):
+        """
+        :return: string word list, list format
+        """
+        sents = []
+        if self.is_leaf():
+            self.length = 1
+            sents.append(self.str_word)
+            return sents
+
+        for child in self.children:
+            sents += child.get_str_yield()
+        self.length = len(sents)
+        return sents
 
     def get_yield_node(self):
         """
