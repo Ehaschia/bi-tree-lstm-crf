@@ -117,7 +117,7 @@ def main():
     logger.info("Loading Embedding")
 
     # load embedding
-    if embedd_mode == 'random':
+    if embedd_mode == 'random' or elmo:
         embedd_dim = 300
         embedd_dict = None
     else:
@@ -141,8 +141,10 @@ def main():
                 table[index, :] = a_embedding
             print('oov: %d' % oov)
         return torch.from_numpy(table)
-
-    word_table = construct_word_embedding_table()
+    if elmo:
+        word_table = None
+    else:
+        word_table = construct_word_embedding_table()
     embedd_dict = None
     logger.info("constructing network...")
     if model_mode == 'TreeLSTM':
