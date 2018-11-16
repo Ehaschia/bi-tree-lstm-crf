@@ -17,6 +17,7 @@ from module.nn.tree_lstm import *
 from tensorboardX import SummaryWriter
 from module.util import detect_nan
 
+
 def main():
     parser = argparse.ArgumentParser(description='Tuning with bi-directional Tree-LSTM-CRF')
     parser.add_argument('--leaf_lstm', action='store_true', help='use leaf_lstm or not')
@@ -60,11 +61,14 @@ def main():
     parser.add_argument('--tensorboard', action='store_true')
     parser.add_argument('--td_name', type=str, default='default', help='the name of this test')
     parser.add_argument('--td_dir', type=str, required=True)
-    parser.add_argument('--root_acc', choices=['fine_phase', 'fine_sents', 'bin_phase', 'bin_sents'],
+    parser.add_argument('--root_acc', choices=['fine_phase', 'fine_sents', 'bin_phase', 'bin_sents',
+                                               'bin_phase_v2', 'bin_sents_v2'],
                         help='whether update of root or phase.')
     parser.add_argument('--attention', action='store_true')
     parser.add_argument('--coattention_dim', type=int, default=150)
     parser.add_argument('--elmo', action='store_true')
+    parser.add_argument('--elmo_weight', type=str,
+                        default='/home/ehaschia/Code/dataset/elmo/elmo_2x4096_512_2048cnn_2xhighway_weights.hdf5')
 
     # load tree
     args = parser.parse_args()
@@ -81,6 +85,7 @@ def main():
     attention = args.attention
     coattention_dim = args.coattention_dim
     elmo = args.elmo
+    elmo_weight = args.elmo_weight
     if args.tensorboard:
         summary_writer = SummaryWriter(log_dir=args.td_dir + '/' + args.td_name)
         summary_writer.add_text('parameters', str(args))
@@ -118,7 +123,7 @@ def main():
 
     # load embedding
     if embedd_mode == 'random' or elmo:
-        embedd_dim = 300
+        embedd_dim = 1024 if elmo else 300
         embedd_dict = None
     else:
         embedd_dict, embedd_dim = utils.load_embedding_dict(embedd_mode, args.embedding_path)
@@ -141,6 +146,7 @@ def main():
                 table[index, :] = a_embedding
             print('oov: %d' % oov)
         return torch.from_numpy(table)
+
     if elmo:
         word_table = None
     else:
@@ -153,28 +159,28 @@ def main():
                            embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf, p_tree=args.p_tree,
                            p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn, device=device,
                            pred_dense_layer=pred_dense_layer, attention=attention, coattention_dim=coattention_dim,
-                           elmo=elmo).to(device)
+                           elmo=elmo, elmo_weight=elmo_weight).to(device)
     elif model_mode == 'BiTreeLSTM':
         network = BiTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                              args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num, args.num_labels,
                              embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf, p_tree=args.p_tree,
                              p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn, device=device,
                              pred_dense_layer=pred_dense_layer, attention=attention, coattention_dim=coattention_dim,
-                             elmo=elmo).to(device)
+                             elmo=elmo, elmo_weight=elmo_weight).to(device)
     elif model_mode == 'CRFTreeLSTM':
         network = CRFTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                               args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num, args.num_labels,
                               embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf, p_tree=args.p_tree,
                               p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn, device=device,
                               pred_dense_layer=pred_dense_layer, attention=attention, coattention_dim=coattention_dim,
-                              elmo=elmo).to(device)
+                              elmo=elmo, elmo_weight=elmo_weight).to(device)
     elif model_mode == 'CRFBiTreeLSTM':
         network = CRFBiTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                                 args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
                                 args.num_labels, embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
                                 p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn,
                                 device=device, pred_dense_layer=pred_dense_layer, attention=attention,
-                                coattention_dim=coattention_dim, elmo=elmo).to(device)
+                                coattention_dim=coattention_dim, elmo=elmo, elmo_weight=elmo_weight).to(device)
     elif model_mode == 'LVeGTreeLSTM':
         network = LVeGTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                                args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
@@ -182,28 +188,28 @@ def main():
                                p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn,
                                device=device, comp=args.lveg_comp, g_dim=args.gaussian_dim,
                                pred_dense_layer=pred_dense_layer, attention=attention,
-                               coattention_dim=coattention_dim, elmo=elmo).to(device)
+                               coattention_dim=coattention_dim, elmo=elmo, elmo_weight=elmo_weight).to(device)
     elif model_mode == 'LVeGBiTreeLSTM':
         network = LVeGBiTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                                  args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
                                  args.num_labels, embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
                                  p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn,
                                  device=device, comp=args.lveg_comp, g_dim=args.gaussian_dim, attention=attention,
-                                 coattention_dim=coattention_dim, elmo=elmo).to(device)
+                                 coattention_dim=coattention_dim, elmo=elmo, elmo_weight=elmo_weight).to(device)
     elif model_mode == 'BiCRFBiTreeLSTM':
         network = BiCRFBiTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                                   args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
                                   args.num_labels, embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
                                   p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn,
                                   device=device, pred_dense_layer=pred_dense_layer, attention=attention,
-                                  coattention_dim=coattention_dim, elmo=elmo).to(device)
+                                  coattention_dim=coattention_dim, elmo=elmo, elmo_weight=elmo_weight).to(device)
     elif model_mode == 'BiCRFTreeLSTM':
         network = BiCRFTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                                 args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
                                 args.num_labels, embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
                                 p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn,
                                 device=device, pred_dense_layer=pred_dense_layer, attention=attention,
-                                coattention_dim=coattention_dim, elmo=elmo).to(device)
+                                coattention_dim=coattention_dim, elmo=elmo, elmo_weight=elmo_weight).to(device)
     else:
         raise NotImplementedError
 
@@ -236,16 +242,20 @@ def main():
 
     dev_p_correct = 0.0
     dev_s_correct = 0.0
-    dev_bin_p_correct = 0.0
-    dev_bin_s_correct = 0.0
+    dev_bin_p_correct_1 = 0.0
+    dev_bin_s_correct_1 = 0.0
+    dev_bin_p_correct_2 = 0.0
+    dev_bin_s_correct_2 = 0.0
     best_epoch = 0
     test_p_correct = 0.0
     test_s_correct = 0.0
     test_p_total = 0
     test_bin_s_total = 0.0
     test_bin_p_total = 0.0
-    test_bin_p_correct = 0.0
-    test_bin_s_correct = 0.0
+    test_bin_p_correct_1 = 0.0
+    test_bin_p_correct_2 = 0.0
+    test_bin_s_correct_1 = 0.0
+    test_bin_s_correct_2 = 0.0
     for epoch in range(1, args.epoch + 1):
         train_dataset.shuffle()
 
@@ -295,8 +305,10 @@ def main():
         dev_p_total = 0
         dev_bin_p_total = 0.0
         dev_bin_s_total = 0.0
-        dev_bin_p_corr = 0.0
-        dev_bin_s_corr = 0.0
+        dev_bin_p_corr_1 = 0.0
+        dev_bin_p_corr_2 = 0.0
+        dev_bin_s_corr_1 = 0.0
+        dev_bin_s_corr_2 = 0.0
         for i in tqdm(range(len(dev_dataset))):
             tree = dev_dataset[i]
             p_corr, preds, bin_corr, bin_preds, bin_mask = network.predict(tree)
@@ -306,9 +318,12 @@ def main():
             dev_s_corr += p_corr[-1].item()
 
             if tree.label != 2:
-                dev_bin_p_corr += bin_corr.sum().item()
+                dev_bin_p_corr_1 += bin_corr[0].sum().item()
                 dev_bin_p_total += bin_mask.sum().item()
-                dev_bin_s_corr += bin_corr[-1].item()
+                dev_bin_s_corr_1 += bin_corr[0][-1].item()
+                if len(bin_corr) == 2:
+                    dev_bin_p_corr_2 += bin_corr[1].sum().item()
+                    dev_bin_s_corr_2 += bin_corr[0][-1].item()
                 dev_bin_s_total += 1.0
 
             tree.clean()
@@ -317,21 +332,36 @@ def main():
 
         add_scalar_summary(summary_writer, 'dev/fine phase acc', (dev_p_corr * 100 / dev_p_total), epoch)
         add_scalar_summary(summary_writer, 'dev/fine sents acc', (dev_s_corr * 100 / dev_s_total), epoch)
-        add_scalar_summary(summary_writer, 'dev/binary phase acc', (dev_bin_p_corr * 100 / dev_bin_p_total), epoch)
-        add_scalar_summary(summary_writer, 'dev/binary sents acc', (dev_bin_s_corr * 100 / dev_bin_s_total), epoch)
-
-        print('dev phase acc: %.2f%%, dev sents acc: %.2f%%, binary phase acc: %.2f%%, dev sents acc: %.2f%%'
-              % (dev_p_corr * 100 / dev_p_total, dev_s_corr * 100 / dev_s_total,
-                 dev_bin_p_corr * 100 / dev_bin_p_total, dev_bin_s_corr * 100 / dev_bin_s_total))
+        add_scalar_summary(summary_writer, 'dev/binary phase acc', (dev_bin_p_corr_1 * 100 / dev_bin_p_total), epoch)
+        add_scalar_summary(summary_writer, 'dev/binary sents acc', (dev_bin_s_corr_1 * 100 / dev_bin_s_total), epoch)
+        if dev_bin_p_corr_2 != 0:
+            add_scalar_summary(summary_writer, 'dev/binary phase acc', (dev_bin_p_corr_2 * 100 / dev_bin_p_total),
+                               epoch)
+            add_scalar_summary(summary_writer, 'dev/binary sents acc', (dev_bin_s_corr_2 * 100 / dev_bin_s_total),
+                               epoch)
+        if dev_bin_p_corr_2 == 0:
+            print('dev phase acc: %.2f%%, dev sents acc: %.2f%%, binary phase acc: %.2f%%, dev sents acc: %.2f%%'
+                  % (dev_p_corr * 100 / dev_p_total, dev_s_corr * 100 / dev_s_total,
+                     dev_bin_p_corr_1 * 100 / dev_bin_p_total, dev_bin_s_corr_1 * 100 / dev_bin_s_total))
+        else:
+            print('dev phase acc: %.2f%%, dev sents acc: %.2f%%, binary phase acc: %.2f%%, dev sents acc: %.2f%%, '
+                  'binary phase v2 acc: %.2f%%, dev sents v2 acc: %.2f%% '
+                  % (dev_p_corr * 100 / dev_p_total, dev_s_corr * 100 / dev_s_total,
+                     dev_bin_p_corr_1 * 100 / dev_bin_p_total, dev_bin_s_corr_1 * 100 / dev_bin_s_total,
+                     dev_bin_p_corr_2 * 100 / dev_bin_p_total, dev_bin_s_corr_2 * 100 / dev_bin_s_total))
 
         if root_acc == 'fine_sents':
             update = True if dev_s_corr > dev_s_correct else False
         elif root_acc == 'fine_phase':
             update = True if dev_p_corr > dev_p_correct else False
         elif root_acc == 'bin_phase':
-            update = True if dev_bin_p_corr > dev_bin_p_correct else False
+            update = True if dev_bin_p_corr_1 > dev_bin_p_correct_1 else False
         elif root_acc == 'bin_sents':
-            update = True if dev_bin_s_corr > dev_bin_s_correct else False
+            update = True if dev_bin_s_corr_1 > dev_bin_s_correct_1 else False
+        elif root_acc == 'bin_phase_v2':
+            update = True if dev_bin_p_corr_2 > dev_bin_p_correct_2 else False
+        elif root_acc == 'bin_sents_v2':
+            update = True if dev_bin_s_corr_2 > dev_bin_s_correct_2 else False
         else:
             raise NotImplementedError
         # if dev_s_corr > dev_s_correct:
@@ -339,16 +369,20 @@ def main():
         if update:
             dev_p_correct = dev_p_corr
             dev_s_correct = dev_s_corr
-            dev_bin_p_correct = dev_bin_p_corr
-            dev_bin_s_correct = dev_bin_s_corr
+            dev_bin_p_correct_1 = dev_bin_p_corr_1
+            dev_bin_p_correct_2 = dev_bin_p_corr_2
+            dev_bin_s_correct_1 = dev_bin_s_corr_1
+            dev_bin_s_correct_2 = dev_bin_s_corr_2
             best_epoch = epoch
             test_p_correct = 0.0
             test_s_correct = 0.0
             test_p_total = 0
             test_bin_s_total = 0.0
             test_bin_p_total = 0.0
-            test_bin_p_correct = 0.0
-            test_bin_s_correct = 0.0
+            test_bin_p_correct_1 = 0.0
+            test_bin_p_correct_2 = 0.0
+            test_bin_s_correct_1 = 0.0
+            test_bin_s_correct_2 = 0.0
 
             time.sleep(1)
 
@@ -361,32 +395,68 @@ def main():
                 test_s_correct += p_corr[-1].item()
 
                 if tree.label != 2:
-                    test_bin_p_correct += bin_corr.sum().item()
+                    test_bin_p_correct_1 += bin_corr[0].sum().item()
                     test_bin_p_total += bin_mask.sum().item()
-                    test_bin_s_correct += bin_corr[-1].item()
+                    test_bin_s_correct_1 += bin_corr[0][-1].item()
+                    if len(bin_corr) == 2:
+                        test_bin_p_correct_2 += bin_corr[0].sum().item()
+                        test_bin_s_correct_2 += bin_corr[0][-1].item()
                     test_bin_s_total += 1.0
 
                 tree.clean()
 
             time.sleep(1)
 
-            print('test phase acc: %.2f%%, test sents acc: %.2f%%, binary phase acc: %.2f%%, binary sents acc: %.2f%%'
-                  % (test_p_correct * 100 / test_p_total, test_s_correct * 100 / len(test_dataset),
-                     test_bin_p_correct * 100 / test_bin_p_total, test_bin_s_correct * 100 / test_bin_s_total))
+            if test_bin_p_correct_2 == 0:
+                print('test phase acc: %.2f%%, test sents acc: %.2f%%, binary phase acc: %.2f%%, binary sents acc: '
+                      '%.2f%% '
+                      % (test_p_correct * 100 / test_p_total, test_s_correct * 100 / len(test_dataset),
+                         test_bin_p_correct_1 * 100 / test_bin_p_total, test_bin_s_correct_1 * 100 / test_bin_s_total))
+            else:
+                print('test phase acc: %.2f%%, test sents acc: %.2f%%, binary phase acc: %.2f%%, binary sents acc: '
+                      '%.2f%%, binary phase v2 acc: %.2f%%, binary sents v2 acc: %.2f%% '
+                      % (test_p_correct * 100 / test_p_total, test_s_correct * 100 / len(test_dataset),
+                         test_bin_p_correct_1 * 100 / test_bin_p_total, test_bin_s_correct_1 * 100 / test_bin_s_total,
+                         test_bin_p_correct_2 * 100 / test_bin_p_total, test_bin_s_correct_2 * 100 / test_bin_s_total))
 
-        print("best dev phase acc: %.2f%%, sents acc: %.2f%%, binary phase acc: %.2f%%, sents acc: %.2f%% (epoch: %d)" % (
-            dev_p_correct * 100 / dev_p_total, dev_s_correct * 100 / dev_s_total,
-            dev_bin_p_correct *100 / dev_bin_p_total, dev_bin_s_correct * 100 / dev_bin_s_total,
-            best_epoch))
-        print("best tst phase corr: %.2f%%, sents acc: %.2f%%, binary phase acc: %.2f%%, sents acc: %.2f%% (epoch: %d)" % (
-            test_p_correct * 100 / test_p_total, test_s_correct * 100 / len(test_dataset),
-            test_bin_p_correct * 100 / test_bin_p_total,  test_bin_s_correct * 100 / test_bin_s_total,
-            best_epoch))
-
+        if dev_bin_p_correct_2 == 0:
+            print(
+                "best dev phase acc: %.2f%%, sents acc: %.2f%%, binary phase acc: %.2f%%, sents acc: %.2f%% (epoch: %d)" % (
+                    dev_p_correct * 100 / dev_p_total, dev_s_correct * 100 / dev_s_total,
+                    dev_bin_p_correct_1 * 100 / dev_bin_p_total, dev_bin_s_correct_1 * 100 / dev_bin_s_total,
+                    best_epoch))
+            print(
+                "best tst phase corr: %.2f%%, sents acc: %.2f%%, binary phase acc: %.2f%%, sents acc: %.2f%% (epoch: %d)" % (
+                    test_p_correct * 100 / test_p_total, test_s_correct * 100 / len(test_dataset),
+                    test_bin_p_correct_1 * 100 / test_bin_p_total, test_bin_s_correct_1 * 100 / test_bin_s_total,
+                    best_epoch))
+        else:
+            print(
+                "best dev phase acc: %.2f%%, sents acc: %.2f%%, binary phase acc: %.2f%%, sents acc: %.2f%%, "
+                "binary phase v2 acc: %.2f%%, sents v2 acc: %.2f%% (epoch: %d)" % (
+                    dev_p_correct * 100 / dev_p_total, dev_s_correct * 100 / dev_s_total,
+                    dev_bin_p_correct_1 * 100 / dev_bin_p_total, dev_bin_s_correct_1 * 100 / dev_bin_s_total,
+                    dev_bin_p_correct_2 * 100 / dev_bin_p_total, dev_bin_s_correct_2 * 100 / dev_bin_s_total,
+                    best_epoch))
+            print(
+                "best tst phase corr: %.2f%%, sents acc: %.2f%%, binary phase acc: %.2f%%, sents acc: %.2f%%, "
+                "binary phase v2 acc: %.2f%%, sents v2 acc: %.2f%%  (epoch: %d)" % (
+                    test_p_correct * 100 / test_p_total, test_s_correct * 100 / len(test_dataset),
+                    test_bin_p_correct_1 * 100 / test_bin_p_total, test_bin_s_correct_1 * 100 / test_bin_s_total,
+                    test_bin_p_correct_2 * 100 / test_bin_p_total, test_bin_s_correct_2 * 100 / test_bin_s_total,
+                    best_epoch))
         add_scalar_summary(summary_writer, 'test/fine phase acc', (test_p_correct * 100 / test_p_total), epoch)
         add_scalar_summary(summary_writer, 'test/fine sents acc', (test_s_correct * 100 / len(test_dataset)), epoch)
-        add_scalar_summary(summary_writer, 'test/binary phase acc', (test_bin_p_correct * 100 / test_bin_p_total), epoch)
-        add_scalar_summary(summary_writer, 'test/binary sents acc', (test_bin_s_correct * 100 / test_bin_s_total), epoch)
+        add_scalar_summary(summary_writer, 'test/binary phase acc', (test_bin_p_correct_1 * 100 / test_bin_p_total),
+                           epoch)
+        add_scalar_summary(summary_writer, 'test/binary sents acc', (test_bin_s_correct_1 * 100 / test_bin_s_total),
+                           epoch)
+
+        if test_bin_p_correct_2 != 0:
+            add_scalar_summary(summary_writer, 'test/binary phase v2 acc', (test_bin_p_correct_2 * 100 / test_bin_p_total),
+                               epoch)
+            add_scalar_summary(summary_writer, 'test/binary sents v2  acc', (test_bin_s_correct_2 * 100 / test_bin_s_total),
+                               epoch)
 
         if optim_method == "SGD" and epoch % schedule == 0:
             lr = learning_rate / (1.0 + epoch * decay_rate)
@@ -396,6 +466,7 @@ def main():
         summary_writer.close()
     else:
         pass
+
 
 if __name__ == '__main__':
     torch.manual_seed(48)

@@ -6,7 +6,7 @@ import torch.nn.utils.rnn as rnn_utils
 from .crf import TreeCRF, BinaryTreeCRF
 from .lveg import BinaryTreeLVeG
 from .attention import CoAttention
-from ..util import options_file, weight_file
+from ..util import options_file
 from allennlp.modules.elmo import Elmo, batch_to_ids
 
 
@@ -25,7 +25,7 @@ class TreeLstm(nn.Module):
     def __init__(self, tree_mode, seq_mode, pred_mode, word_dim, num_words, tree_input_dim, output_dim,
                  softmax_in_dim, seq_layer_num, num_labels, embedd_word=None, embedd_trainable=True,
                  p_in=0.5, p_leaf=0.5, p_tree=0.5, p_pred=0.5, leaf_rnn=False, bi_leaf_rnn=False, device=None,
-                 pred_dense_layer=False, attention=False, coattention_dim=150, elmo=False):
+                 pred_dense_layer=False, attention=False, coattention_dim=150, elmo=False, elmo_weight=None):
         super(TreeLstm, self).__init__()
         if tree_mode == 'SLSTM':
             self.bu_rnn_cell = BinarySLSTMCell(tree_input_dim, output_dim, p_tree=p_tree)
@@ -47,7 +47,7 @@ class TreeLstm(nn.Module):
 
         self.tree_input_dim = tree_input_dim
         if self.use_elmo:
-            self.elmo = Elmo(options_file, weight_file, 2, dropout=p_in)
+            self.elmo = Elmo(options_file, elmo_weight, 1, requires_grad=False, dropout=p_in)
         else:
             self.word_embedding = nn.Embedding(num_words, word_dim)
             reset_embedding(embedd_word, self.word_embedding, word_dim, embedd_trainable)
@@ -71,7 +71,7 @@ class TreeLstm(nn.Module):
             self.generate_pred_layer(pred_input_dim, softmax_in_dim, num_labels)
             self.pred = self.single_h_pred
         elif pred_mode == 'avg_h':
-            pred_input_dim = coattention_dim if self.use_attention else 2*output_dim
+            pred_input_dim = 2*coattention_dim if self.use_attention else 2*output_dim
             self.generate_pred_layer(pred_input_dim, softmax_in_dim, num_labels)
             self.pred = self.avg_h_pred
         elif pred_mode == 'avg_seq_h':
@@ -188,8 +188,8 @@ class TreeLstm(nn.Module):
     def forward(self, tree):
         if self.use_elmo:
             str_sentences = [tree.get_str_yield()]
-            character_ids = batch_to_ids(str_sentences)
-            word = self.elmo(character_ids)
+            character_ids = batch_to_ids(str_sentences).to(self.device)
+            word = self.elmo(character_ids)['elmo_representations'][0].squeeze(0)
         else:
             input_word = tree.get_yield()
             # TODO optimize the input word to gpu here
@@ -244,7 +244,7 @@ class TreeLstm(nn.Module):
         binary_preds = ((pred_score[:, 3] + pred_score[:, 4]) > (pred_score[:, 1] + pred_score[:, 2])).cpu()
         binary_lables = target > 2
         binary_corr = (torch.eq(binary_preds, binary_lables) * binary_mask).float()
-        return corr, preds, binary_corr, binary_preds, binary_mask
+        return corr, preds, [binary_corr], [binary_preds], binary_mask
 
 
 class BiTreeLstm(TreeLstm):
@@ -252,13 +252,13 @@ class BiTreeLstm(TreeLstm):
     def __init__(self, tree_mode, seq_mode, pred_mode, word_dim, num_words, tree_input_dim, output_dim,
                  softmax_in_dim, seq_layer_num, num_labels, embedd_word=None, embedd_trainable=True,
                  p_in=0.5, p_leaf=0.5, p_tree=0.5, p_pred=0.5, leaf_rnn=False, bi_leaf_rnn=False, device=None,
-                 pred_dense_layer=False, attention=False, coattention_dim=150, elmo=False):
+                 pred_dense_layer=False, attention=False, coattention_dim=150, elmo=False, elmo_weight=None):
         super(BiTreeLstm, self).__init__(tree_mode, seq_mode, pred_mode, word_dim, num_words, tree_input_dim,
                                          output_dim, softmax_in_dim, seq_layer_num, num_labels, embedd_word=embedd_word,
                                          embedd_trainable=embedd_trainable, p_in=p_in, p_leaf=p_leaf, p_tree=p_tree,
                                          p_pred=p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_leaf_rnn, device=device,
                                          pred_dense_layer=pred_dense_layer, attention=attention,
-                                         coattention_dim=coattention_dim, elmo=elmo)
+                                         coattention_dim=coattention_dim, elmo=elmo, elmo_weight=elmo_weight)
         # bi-directional only use for BUTreeLSTM
         assert tree_mode == 'BUTreeLSTM'
         self.td_rnn_cell = TDLSTMCell(word_dim, tree_input_dim, output_dim)
@@ -269,7 +269,7 @@ class BiTreeLstm(TreeLstm):
             self.generate_pred_layer(pred_input_dim, softmax_in_dim, num_labels)
             self.pred = self.single_h_pred
         elif pred_mode == 'avg_h':
-            pred_input_dim = coattention_dim if self.use_attention else 4 * output_dim
+            pred_input_dim = 2*coattention_dim if self.use_attention else 4 * output_dim
             self.generate_pred_layer(pred_input_dim, softmax_in_dim, num_labels)
             self.pred = self.avg_h_pred
         elif pred_mode == 'avg_seq_h':
@@ -361,8 +361,8 @@ class BiTreeLstm(TreeLstm):
     def forward(self, tree):
         if self.use_elmo:
             str_sentences = [tree.get_str_yield()]
-            character_ids = batch_to_ids(str_sentences)
-            word = self.elmo(character_ids)
+            character_ids = batch_to_ids(str_sentences).to(self.device)
+            word = self.elmo(character_ids)['elmo_representations'][0].squeeze(0)
         else:
             input_word = tree.get_yield()
             # TODO optimize the input word to gpu here
@@ -396,13 +396,14 @@ class CRFTreeLstm(TreeLstm):
     def __init__(self, tree_mode, seq_mode, pred_mode, word_dim, num_words, tree_input_dim, output_dim,
                  softmax_in_dim, seq_layer_num, num_labels, embedd_word=None, embedd_trainable=True,
                  p_in=0.5, p_leaf=0.5, p_tree=0.5, p_pred=0.5, leaf_rnn=False, bi_leaf_rnn=False, device=None,
-                 pred_dense_layer=False, attention=False, coattention_dim=150, elmo=False):
+                 pred_dense_layer=False, attention=False, coattention_dim=150, elmo=False, elmo_weight=None):
         super(CRFTreeLstm, self).__init__(tree_mode, seq_mode, pred_mode, word_dim, num_words, tree_input_dim,
                                           output_dim, softmax_in_dim, seq_layer_num, num_labels,
                                           embedd_word=embedd_word, embedd_trainable=embedd_trainable, p_in=p_in,
                                           p_leaf=p_leaf, p_tree=p_tree, p_pred=p_pred, leaf_rnn=leaf_rnn,
                                           bi_leaf_rnn=bi_leaf_rnn, device=device, pred_dense_layer=pred_dense_layer,
-                                          attention = attention, coattention_dim=coattention_dim, elmo=elmo)
+                                          attention = attention, coattention_dim=coattention_dim, elmo=elmo,
+                                          elmo_weight=elmo_weight)
         crf_input_dim = coattention_dim if self.use_attention else output_dim
         self.crf = TreeCRF(crf_input_dim, num_labels, attention=self.use_attention, pred_mode=pred_mode,
                            only_bu=True)
@@ -426,10 +427,12 @@ class CRFTreeLstm(TreeLstm):
         corr = torch.eq(preds, target).float()
         # binary target
         binary_mask = target.ne(2)
-        binary_preds = preds > 2
+        binary_preds_1 = preds > 2
+        binary_preds_2 = preds >= 2
         binary_lables = target > 2
-        binary_corr = (torch.eq(binary_preds, binary_lables) * binary_mask).float()
-        return corr, preds, binary_corr, binary_preds, binary_mask
+        binary_corr_1 = (torch.eq(binary_preds_1, binary_lables) * binary_mask).float()
+        binary_corr_2 = (torch.eq(binary_preds_2, binary_lables) * binary_mask).float()
+        return corr, preds, [binary_corr_1, binary_corr_2], [binary_preds_1, binary_preds_2], binary_mask
 
 
 class CRFBiTreeLstm(BiTreeLstm):
@@ -437,13 +440,14 @@ class CRFBiTreeLstm(BiTreeLstm):
     def __init__(self, tree_mode, seq_mode, pred_mode, word_dim, num_words, tree_input_dim, output_dim,
                  softmax_in_dim, seq_layer_num, num_labels, embedd_word=None, embedd_trainable=True,
                  p_in=0.5, p_leaf=0.5, p_tree=0.5, p_pred=0.5, leaf_rnn=False, bi_leaf_rnn=False, device=None,
-                 pred_dense_layer=False, attention=False, coattention_dim=150, elmo=False):
+                 pred_dense_layer=False, attention=False, coattention_dim=150, elmo=False, elmo_weight=None):
         super(CRFBiTreeLstm, self).__init__(tree_mode, seq_mode, pred_mode, word_dim, num_words, tree_input_dim,
                                             output_dim, softmax_in_dim, seq_layer_num, num_labels,
                                             embedd_word=embedd_word, embedd_trainable=embedd_trainable, p_in=p_in,
                                             p_leaf=p_leaf, p_tree=p_tree, p_pred=p_pred, leaf_rnn=leaf_rnn,
                                             bi_leaf_rnn=bi_leaf_rnn, device=device, pred_dense_layer=pred_dense_layer,
-                                            attention=attention, coattention_dim=coattention_dim, elmo=elmo)
+                                            attention=attention, coattention_dim=coattention_dim, elmo=elmo,
+                                            elmo_weight=elmo_weight)
         crf_input_dim = coattention_dim if self.use_attention else output_dim
         self.crf = TreeCRF(crf_input_dim, num_labels, attention=self.use_attention, pred_mode=pred_mode,
                            only_bu=False, softmax_in_dim=softmax_in_dim)
@@ -466,10 +470,12 @@ class CRFBiTreeLstm(BiTreeLstm):
         corr = torch.eq(preds, target).float()
         # binary target
         binary_mask = target.ne(2)
-        binary_preds = preds > 2
+        binary_preds_1 = preds > 2
+        binary_preds_2 = preds >= 2
         binary_lables = target > 2
-        binary_corr = (torch.eq(binary_preds, binary_lables) * binary_mask).float()
-        return corr, preds, binary_corr, binary_preds, binary_mask
+        binary_corr_1 = (torch.eq(binary_preds_1, binary_lables) * binary_mask).float()
+        binary_corr_2 = (torch.eq(binary_preds_2, binary_lables) * binary_mask).float()
+        return corr, preds, [binary_corr_1, binary_corr_2], [binary_preds_1, binary_preds_2], binary_mask
 
 
 class LVeGBiTreeLstm(BiTreeLstm):
@@ -477,13 +483,14 @@ class LVeGBiTreeLstm(BiTreeLstm):
     def __init__(self, tree_mode, seq_mode, pred_mode, word_dim, num_words, tree_input_dim, output_dim,
                  softmax_in_dim, seq_layer_num, num_labels, embedd_word=None, embedd_trainable=True, comp=1, g_dim=1,
                  p_in=0.5, p_leaf=0.5, p_tree=0.5, p_pred=0.5, leaf_rnn=False, bi_leaf_rnn=False, device=None,
-                 pred_dense_layer=False, attention=False, coattention_dim=150, elmo=False):
+                 pred_dense_layer=False, attention=False, coattention_dim=150, elmo=False, elmo_weight=None):
         super(LVeGBiTreeLstm, self).__init__(tree_mode, seq_mode, pred_mode, word_dim, num_words, tree_input_dim,
                                              output_dim, softmax_in_dim, seq_layer_num, num_labels,
                                              embedd_word=embedd_word, embedd_trainable=embedd_trainable, p_in=p_in,
                                              p_leaf=p_leaf, p_tree=p_tree, p_pred=p_pred, leaf_rnn=leaf_rnn,
                                              bi_leaf_rnn=bi_leaf_rnn, device=device, pred_dense_layer=pred_dense_layer,
-                                             attention=attention, coattention_dim=coattention_dim, elmo=elmo)
+                                             attention=attention, coattention_dim=coattention_dim, elmo=elmo,
+                                             elmo_weight=elmo_weight)
         lveg_input_dim = coattention_dim if self.use_attention else output_dim
         self.lveg = BinaryTreeLVeG(lveg_input_dim, num_labels, comp, g_dim, attention=self.use_attention,
                                    pred_mode=pred_mode, only_bu=False, softmax_in_dim=softmax_in_dim)
@@ -509,10 +516,12 @@ class LVeGBiTreeLstm(BiTreeLstm):
 
         # binary target
         binary_mask = target.ne(2)
-        binary_preds = preds > 2
+        binary_preds_1 = preds > 2
+        binary_preds_2 = preds >= 2
         binary_lables = target > 2
-        binary_corr = (torch.eq(binary_preds, binary_lables) * binary_mask).float()
-        return corr, preds, binary_corr, binary_preds, binary_mask
+        binary_corr_1 = (torch.eq(binary_preds_1, binary_lables) * binary_mask).float()
+        binary_corr_2 = (torch.eq(binary_preds_2, binary_lables) * binary_mask).float()
+        return corr, preds, [binary_corr_1, binary_corr_2], [binary_preds_1, binary_preds_2], binary_mask
 
 
 class LVeGTreeLstm(TreeLstm):
@@ -520,13 +529,14 @@ class LVeGTreeLstm(TreeLstm):
     def __init__(self, tree_mode, seq_mode, pred_mode, word_dim, num_words, tree_input_dim, output_dim,
                  softmax_in_dim, seq_layer_num, num_labels, embedd_word=None, embedd_trainable=True, comp=1, g_dim=1,
                  p_in=0.5, p_leaf=0.5, p_tree=0.5, p_pred=0.5, leaf_rnn=False, bi_leaf_rnn=False, device=None,
-                 pred_dense_layer=False, attention=False, coattention_dim=150, elmo=False):
+                 pred_dense_layer=False, attention=False, coattention_dim=150, elmo=False, elmo_weight=None):
         super(LVeGTreeLstm, self).__init__(tree_mode, seq_mode, pred_mode, word_dim, num_words, tree_input_dim,
                                            output_dim, softmax_in_dim, seq_layer_num, num_labels,
                                            embedd_word=embedd_word, embedd_trainable=embedd_trainable, p_in=p_in,
                                            p_leaf=p_leaf, p_tree=p_tree, p_pred=p_pred, leaf_rnn=leaf_rnn,
                                            bi_leaf_rnn=bi_leaf_rnn, device=device, pred_dense_layer=pred_dense_layer,
-                                           attention=attention, coattention_dim=coattention_dim, elmo=elmo)
+                                           attention=attention, coattention_dim=coattention_dim, elmo=elmo,
+                                           elmo_weight=elmo_weight)
         lveg_input_dim = coattention_dim if self.use_attention else output_dim
         self.lveg = BinaryTreeLVeG(lveg_input_dim, num_labels, comp, g_dim, attention=self.use_attention,
                                    pred_mode=pred_mode, only_bu=True, softmax_in_dim=softmax_in_dim)
@@ -552,10 +562,12 @@ class LVeGTreeLstm(TreeLstm):
 
         # binary target
         binary_mask = target.ne(2)
-        binary_preds = preds > 2
+        binary_preds_1 = preds > 2
+        binary_preds_2 = preds >= 2
         binary_lables = target > 2
-        binary_corr = (torch.eq(binary_preds, binary_lables) * binary_mask).float()
-        return corr, preds, binary_corr, binary_preds, binary_mask
+        binary_corr_1 = (torch.eq(binary_preds_1, binary_lables) * binary_mask).float()
+        binary_corr_2 = (torch.eq(binary_preds_2, binary_lables) * binary_mask).float()
+        return corr, preds, [binary_corr_1, binary_corr_2], [binary_preds_1, binary_preds_2], binary_mask
 
 
 class BiCRFBiTreeLstm(BiTreeLstm):
@@ -563,13 +575,14 @@ class BiCRFBiTreeLstm(BiTreeLstm):
     def __init__(self, tree_mode, seq_mode, pred_mode, word_dim, num_words, tree_input_dim, output_dim,
                  softmax_in_dim, seq_layer_num, num_labels, embedd_word=None, embedd_trainable=True,
                  p_in=0.5, p_leaf=0.5, p_tree=0.5, p_pred=0.5, leaf_rnn=False, bi_leaf_rnn=False, device=None,
-                 pred_dense_layer=False, attention=False, coattention_dim=150, elmo=False):
+                 pred_dense_layer=False, attention=False, coattention_dim=150, elmo=False, elmo_weight=None):
         super(BiCRFBiTreeLstm, self).__init__(tree_mode, seq_mode, pred_mode, word_dim, num_words, tree_input_dim,
                                               output_dim, softmax_in_dim, seq_layer_num, num_labels,
                                               embedd_word=embedd_word, embedd_trainable=embedd_trainable, p_in=p_in,
                                               p_leaf=p_leaf, p_tree=p_tree, p_pred=p_pred, leaf_rnn=leaf_rnn,
                                               bi_leaf_rnn=bi_leaf_rnn, device=device, pred_dense_layer=pred_dense_layer,
-                                              attention=attention, coattention_dim=coattention_dim, elmo=elmo)
+                                              attention=attention, coattention_dim=coattention_dim, elmo=elmo,
+                                              elmo_weight=elmo_weight)
         crf_input_dim = coattention_dim if self.use_attention else output_dim
         self.crf = BinaryTreeCRF(crf_input_dim, output_dim, num_labels, attention=self.use_attention,
                                  pred_mode=pred_mode, only_bu=False, softmax_in_dim=softmax_in_dim)
@@ -593,10 +606,12 @@ class BiCRFBiTreeLstm(BiTreeLstm):
 
         # binary target
         binary_mask = target.ne(2)
-        binary_preds = preds > 2
+        binary_preds_1 = preds > 2
+        binary_preds_2 = preds >= 2
         binary_lables = target > 2
-        binary_corr = (torch.eq(binary_preds, binary_lables) * binary_mask).float()
-        return corr, preds, binary_corr, binary_preds, binary_mask
+        binary_corr_1 = (torch.eq(binary_preds_1, binary_lables) * binary_mask).float()
+        binary_corr_2 = (torch.eq(binary_preds_2, binary_lables) * binary_mask).float()
+        return corr, preds, [binary_corr_1, binary_corr_2], [binary_preds_1, binary_preds_2], binary_mask
 
 
 class BiCRFTreeLstm(TreeLstm):
@@ -604,13 +619,14 @@ class BiCRFTreeLstm(TreeLstm):
     def __init__(self, tree_mode, seq_mode, pred_mode, word_dim, num_words, tree_input_dim, output_dim,
                  softmax_in_dim, seq_layer_num, num_labels, embedd_word=None, embedd_trainable=True,
                  p_in=0.5, p_leaf=0.5, p_tree=0.5, p_pred=0.5, leaf_rnn=False, bi_leaf_rnn=False, device=None,
-                 pred_dense_layer=False, attention=False, coattention_dim=150, elmo=False):
+                 pred_dense_layer=False, attention=False, coattention_dim=150, elmo=False, elmo_weight=None):
         super(BiCRFTreeLstm, self).__init__(tree_mode, seq_mode, pred_mode, word_dim, num_words, tree_input_dim,
                                             output_dim, softmax_in_dim, seq_layer_num, num_labels,
                                             embedd_word=embedd_word, embedd_trainable=embedd_trainable, p_in=p_in,
                                             p_leaf=p_leaf, p_tree=p_tree, p_pred=p_pred, leaf_rnn=leaf_rnn,
                                             bi_leaf_rnn=bi_leaf_rnn, device=device, pred_dense_layer=pred_dense_layer,
-                                            attention=attention, coattention_dim=coattention_dim, elmo=elmo)
+                                            attention=attention, coattention_dim=coattention_dim, elmo=elmo,
+                                            elmo_weight=elmo_weight)
         crf_input_dim = coattention_dim if self.use_attention else output_dim
         self.crf = BinaryTreeCRF(crf_input_dim, num_labels, attention=False, pred_mode=pred_mode,
                                  only_bu=True, softmax_in_dim=softmax_in_dim)
@@ -634,7 +650,9 @@ class BiCRFTreeLstm(TreeLstm):
 
         # binary target
         binary_mask = target.ne(2)
-        binary_preds = preds > 2
+        binary_preds_1 = preds > 2
+        binary_preds_2 = preds >= 2
         binary_lables = target > 2
-        binary_corr = (torch.eq(binary_preds, binary_lables) * binary_mask).float()
-        return corr, preds, binary_corr, binary_preds, binary_mask
+        binary_corr_1 = (torch.eq(binary_preds_1, binary_lables) * binary_mask).float()
+        binary_corr_2 = (torch.eq(binary_preds_2, binary_lables) * binary_mask).float()
+        return corr, preds, [binary_corr_1, binary_corr_2], [binary_preds_1, binary_preds_2], binary_mask
