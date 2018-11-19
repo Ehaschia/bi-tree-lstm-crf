@@ -1,7 +1,7 @@
 __author__ = 'Ehaschia'
 
 import argparse, sys, os
-# sys.path.append('/home/ehaschia/Code/bi-tree-lstm-crf')
+sys.path.append('/home/ehaschia/Code/bi-tree-lstm-crf')
 
 
 import time
@@ -61,9 +61,6 @@ def main():
     parser.add_argument('--tensorboard', action='store_true')
     parser.add_argument('--td_name', type=str, default='default', help='the name of this test')
     parser.add_argument('--td_dir', type=str, required=True)
-    parser.add_argument('--root_acc', choices=['fine_phase', 'fine_sents', 'bin_phase', 'bin_sents',
-                                               'bin_phase_v2', 'bin_sents_v2'],
-                        help='whether update of root or phase.')
     parser.add_argument('--attention', action='store_true')
     parser.add_argument('--coattention_dim', type=int, default=150)
     parser.add_argument('--elmo', action='store_true')
@@ -81,15 +78,23 @@ def main():
     pred_dense_layer = args.pred_dense_layer
     leaf_rnn = args.leaf_lstm
     bi_rnn = args.bi_leaf_lstm
-    root_acc = args.root_acc
+
     attention = args.attention
     coattention_dim = args.coattention_dim
     elmo = args.elmo
     elmo_weight = args.elmo_weight
+
+    all_cite_version = ['fine_phase', 'fine_sents', 'bin_phase', 'bin_sents',
+                        'bin_phase_v2', 'bin_sents_v2', 'full_bin_phase', 'full_bin_phase_v2']
+
     if args.tensorboard:
+        test_writer_dict = {}
         summary_writer = SummaryWriter(log_dir=args.td_dir + '/' + args.td_name)
         summary_writer.add_text('parameters', str(args))
+        for key in all_cite_version:
+            test_writer_dict[key] = SummaryWriter(log_dir=args.td_dir + '/' + args.td_name + '_' + key)
     else:
+        test_writer_dict = None
         summary_writer = None
 
     def add_scalar_summary(summary_writer, name, value, step):
@@ -240,22 +245,26 @@ def main():
         raise NotImplementedError("Not Implement optim Method: " + optim_method)
     logger.info("Optim mode: " + optim_method)
 
-    dev_p_correct = 0.0
-    dev_s_correct = 0.0
-    dev_bin_p_correct_1 = 0.0
-    dev_bin_s_correct_1 = 0.0
-    dev_bin_p_correct_2 = 0.0
-    dev_bin_s_correct_2 = 0.0
-    best_epoch = 0
-    test_p_correct = 0.0
-    test_s_correct = 0.0
-    test_p_total = 0
-    test_bin_s_total = 0.0
-    test_bin_p_total = 0.0
-    test_bin_p_correct_1 = 0.0
-    test_bin_p_correct_2 = 0.0
-    test_bin_s_correct_1 = 0.0
-    test_bin_s_correct_2 = 0.0
+    # dev and test
+    dev_correct = {'fine_phase': 0.0, 'fine_sents': 0.0, 'bin_phase': 0.0, 'bin_sents': 0.0,
+                   'bin_phase_v2': 0.0, 'bin_sents_v2': 0.0, 'full_bin_phase': 0.0, 'full_bin_phase_v2': 0.0}
+    best_epoch = {'fine_phase': 0, 'fine_sents': 0, 'bin_phase': 0, 'bin_sents': 0,
+                  'bin_phase_v2': 0, 'bin_sents_v2': 0, 'full_bin_phase': 0, 'full_bin_phase_v2': 0}
+    test_correct = {}
+    for key in all_cite_version:
+        test_correct[key] = {'fine_phase': 0.0, 'fine_sents': 0.0, 'bin_phase': 0.0, 'bin_sents': 0.0,
+                             'bin_phase_v2': 0.0, 'bin_sents_v2': 0.0, 'full_bin_phase': 0.0, 'full_bin_phase_v2': 0.0}
+    test_total = {'fine_phase': 0.0, 'fine_sents': 0.0, 'bin_phase': 0.0, 'bin_sents': 0.0, 'full_bin_phase': 0.0}
+
+    def log_print(name, fine_phase_acc, fine_sents_acc, bin_phase_acc, full_bin_phase_acc, bin_sents_acc,
+                  bin_phase_v2_acc, full_bin_phase_v2_acc, bin_sents_v2_acc):
+        print(name + ' phase acc: %.2f%%, sents acc: %.2f%%, binary phase acc: %.2f%%, full phase acc: %.2f%%, '
+                     'sents acc: %.2f%%, binary phase v2 acc: %.2f%%, full phase v2 acc: %.2f%%, dev sents v2 acc: '
+                     '%.2f%% '
+              % (fine_phase_acc, fine_sents_acc, bin_phase_acc, full_bin_phase_acc, bin_sents_acc,
+                 bin_phase_v2_acc, full_bin_phase_v2_acc, bin_sents_v2_acc))
+
+
     for epoch in range(1, args.epoch + 1):
         train_dataset.shuffle()
 
@@ -299,90 +308,77 @@ def main():
         add_scalar_summary(summary_writer, 'train/loss', train_err / len(train_dataset), epoch)
 
         network.eval()
-        dev_s_corr = 0.0
-        dev_p_corr = 0.0
-        dev_s_total = len(dev_dataset)
-        dev_p_total = 0
-        dev_bin_p_total = 0.0
-        dev_bin_s_total = 0.0
-        dev_bin_p_corr_1 = 0.0
-        dev_bin_p_corr_2 = 0.0
-        dev_bin_s_corr_1 = 0.0
-        dev_bin_s_corr_2 = 0.0
+        dev_corr = {'fine_phase': 0.0, 'fine_sents': 0.0, 'bin_phase': 0.0, 'bin_sents': 0.0,
+                    'bin_phase_v2': 0.0, 'bin_sents_v2': 0.0, 'full_bin_phase': 0.0, 'full_bin_phase_v2': 0.0}
+        dev_tot = {'fine_phase': 0.0, 'fine_sents': float(len(dev_dataset)), 'bin_phase': 0.0, 'bin_sents': 0.0,
+                   'bin_phase_v2': 0.0, 'bin_sents_v2': 0.0, 'full_bin_phase': 0.0, 'full_bin_phase_v2': 0.0}
+
         for i in tqdm(range(len(dev_dataset))):
             tree = dev_dataset[i]
             p_corr, preds, bin_corr, bin_preds, bin_mask = network.predict(tree)
 
-            dev_p_total += preds.size()[0]
-            dev_p_corr += p_corr.sum().item()
-            dev_s_corr += p_corr[-1].item()
+            dev_tot['fine_phase'] += preds.size()[0]
+
+            dev_corr['fine_phase'] += p_corr.sum().item()
+            dev_corr['fine_sents'] += p_corr[-1].item()
+            dev_corr['full_bin_phase'] += bin_corr[0].sum().item()
+
+            if len(bin_corr) == 2:
+                dev_corr['full_bin_phase_v2'] += bin_corr[1].sum().item()
+            else:
+                dev_corr['full_bin_phase_v2'] = dev_corr['full_bin_phase']
+            dev_tot['full_bin_phase'] += bin_mask.sum().item()
 
             if tree.label != 2:
-                dev_bin_p_corr_1 += bin_corr[0].sum().item()
-                dev_bin_p_total += bin_mask.sum().item()
-                dev_bin_s_corr_1 += bin_corr[0][-1].item()
+                dev_corr['bin_phase'] += bin_corr[0].sum().item()
+                dev_tot['bin_phase'] += bin_mask.sum().item()
+                dev_corr['bin_sents'] += bin_corr[0][-1].item()
                 if len(bin_corr) == 2:
-                    dev_bin_p_corr_2 += bin_corr[1].sum().item()
-                    dev_bin_s_corr_2 += bin_corr[0][-1].item()
-                dev_bin_s_total += 1.0
+                    dev_corr['bin_phase_v2'] += bin_corr[1].sum().item()
+                    dev_corr['bin_sents_v2'] += bin_corr[1][-1].item()
+                else:
+                    dev_corr['bin_phase_v2'] = dev_corr['bin_phase']
+                    dev_corr['bin_sents_v2'] = dev_corr['bin_sents']
+                dev_tot['bin_sents'] += 1.0
 
             tree.clean()
 
         time.sleep(1)
 
-        add_scalar_summary(summary_writer, 'dev/fine phase acc', (dev_p_corr * 100 / dev_p_total), epoch)
-        add_scalar_summary(summary_writer, 'dev/fine sents acc', (dev_s_corr * 100 / dev_s_total), epoch)
-        add_scalar_summary(summary_writer, 'dev/binary phase acc', (dev_bin_p_corr_1 * 100 / dev_bin_p_total), epoch)
-        add_scalar_summary(summary_writer, 'dev/binary sents acc', (dev_bin_s_corr_1 * 100 / dev_bin_s_total), epoch)
-        if dev_bin_p_corr_2 != 0:
-            add_scalar_summary(summary_writer, 'dev/binary phase acc', (dev_bin_p_corr_2 * 100 / dev_bin_p_total),
-                               epoch)
-            add_scalar_summary(summary_writer, 'dev/binary sents acc', (dev_bin_s_corr_2 * 100 / dev_bin_s_total),
-                               epoch)
-        if dev_bin_p_corr_2 == 0:
-            print('dev phase acc: %.2f%%, dev sents acc: %.2f%%, binary phase acc: %.2f%%, dev sents acc: %.2f%%'
-                  % (dev_p_corr * 100 / dev_p_total, dev_s_corr * 100 / dev_s_total,
-                     dev_bin_p_corr_1 * 100 / dev_bin_p_total, dev_bin_s_corr_1 * 100 / dev_bin_s_total))
-        else:
-            print('dev phase acc: %.2f%%, dev sents acc: %.2f%%, binary phase acc: %.2f%%, dev sents acc: %.2f%%, '
-                  'binary phase v2 acc: %.2f%%, dev sents v2 acc: %.2f%% '
-                  % (dev_p_corr * 100 / dev_p_total, dev_s_corr * 100 / dev_s_total,
-                     dev_bin_p_corr_1 * 100 / dev_bin_p_total, dev_bin_s_corr_1 * 100 / dev_bin_s_total,
-                     dev_bin_p_corr_2 * 100 / dev_bin_p_total, dev_bin_s_corr_2 * 100 / dev_bin_s_total))
+        dev_tot['bin_phase_v2'] = dev_tot['bin_phase']
+        dev_tot['bin_sents_v2'] = dev_tot['bin_sents']
+        dev_tot['full_bin_phase_v2'] = dev_tot['full_bin_phase']
 
-        if root_acc == 'fine_sents':
-            update = True if dev_s_corr > dev_s_correct else False
-        elif root_acc == 'fine_phase':
-            update = True if dev_p_corr > dev_p_correct else False
-        elif root_acc == 'bin_phase':
-            update = True if dev_bin_p_corr_1 > dev_bin_p_correct_1 else False
-        elif root_acc == 'bin_sents':
-            update = True if dev_bin_s_corr_1 > dev_bin_s_correct_1 else False
-        elif root_acc == 'bin_phase_v2':
-            update = True if dev_bin_p_corr_2 > dev_bin_p_correct_2 else False
-        elif root_acc == 'bin_sents_v2':
-            update = True if dev_bin_s_corr_2 > dev_bin_s_correct_2 else False
-        else:
-            raise NotImplementedError
+        for key in all_cite_version:
+            add_scalar_summary(summary_writer, 'dev/' + key, (dev_corr[key] * 100 / dev_tot[key]), epoch)
+
+        log_print('dev', dev_corr['fine_phase'] * 100 / dev_tot['fine_phase'],
+                  dev_corr['fine_sents'] * 100 / dev_tot['fine_sents'],
+                  dev_corr['bin_phase'] * 100 / dev_tot['bin_phase'],
+                  dev_corr['full_bin_phase'] * 100 / dev_tot['full_bin_phase'],
+                  dev_corr['bin_sents'] * 100 / dev_tot['bin_sents'],
+                  dev_corr['bin_phase_v2'] * 100 / dev_tot['bin_phase'],
+                  dev_corr['full_bin_phase_v2'] * 100 / dev_tot['full_bin_phase'],
+                  dev_corr['bin_sents_v2'] * 100 / dev_tot['bin_sents'])
+
+        update = []
+        for key in all_cite_version:
+            if dev_corr[key] > dev_correct[key]:
+                update.append(key)
+
         # if dev_s_corr > dev_s_correct:
 
-        if update:
-            dev_p_correct = dev_p_corr
-            dev_s_correct = dev_s_corr
-            dev_bin_p_correct_1 = dev_bin_p_corr_1
-            dev_bin_p_correct_2 = dev_bin_p_corr_2
-            dev_bin_s_correct_1 = dev_bin_s_corr_1
-            dev_bin_s_correct_2 = dev_bin_s_corr_2
-            best_epoch = epoch
-            test_p_correct = 0.0
-            test_s_correct = 0.0
-            test_p_total = 0
-            test_bin_s_total = 0.0
-            test_bin_p_total = 0.0
-            test_bin_p_correct_1 = 0.0
-            test_bin_p_correct_2 = 0.0
-            test_bin_s_correct_1 = 0.0
-            test_bin_s_correct_2 = 0.0
+        if len(update) > 0:
+            for key in update:
+                dev_correct[key] = dev_corr[key]
+                # update corresponding test dict cache
+                test_correct[key] = {'fine_phase': 0.0, 'fine_sents': 0.0, 'bin_phase': 0.0, 'bin_sents': 0.0,
+                                     'bin_phase_v2': 0.0, 'bin_sents_v2': 0.0, 'full_bin_phase': 0.0,
+                                     'full_bin_phase_v2': 0.0}
+                best_epoch[key] = epoch
+            test_total = {'fine_phase': 0.0, 'fine_sents': float(len(test_dataset)), 'bin_phase': 0.0, 'bin_sents': 0.0,
+                          'bin_phase_v2': 0.0, 'bin_sents_v2': 0.0, 'full_bin_phase': 0.0,
+                          'full_bin_phase_v2': 0.0}
 
             time.sleep(1)
 
@@ -390,76 +386,79 @@ def main():
                 tree = test_dataset[i]
                 p_corr, preds, bin_corr, bin_preds, bin_mask = network.predict(tree)
 
-                test_p_total += preds.size()[0]
-                test_p_correct += p_corr.sum().item()
-                test_s_correct += p_corr[-1].item()
-
+                # count total number
+                test_total['fine_phase'] += preds.size()[0]
+                test_total['full_bin_phase'] += bin_mask.sum().item()
                 if tree.label != 2:
-                    test_bin_p_correct_1 += bin_corr[0].sum().item()
-                    test_bin_p_total += bin_mask.sum().item()
-                    test_bin_s_correct_1 += bin_corr[0][-1].item()
+                    test_total['bin_phase'] += bin_mask.sum().item()
+                    test_total['bin_sents'] += 1.0
+
+                for key in update:
+                    test_correct[key]['fine_phase'] += p_corr.sum().item()
+                    test_correct[key]['fine_sents'] += p_corr[-1].item()
+                    test_correct[key]['full_bin_phase'] += bin_corr[0].sum().item()
+
                     if len(bin_corr) == 2:
-                        test_bin_p_correct_2 += bin_corr[0].sum().item()
-                        test_bin_s_correct_2 += bin_corr[0][-1].item()
-                    test_bin_s_total += 1.0
+                        test_correct[key]['full_bin_phase_v2'] += bin_corr[0].sum().item()
+                    else:
+                        test_correct[key]['full_bin_phase_v2'] = test_correct[key]['full_bin_phase']
+
+                    if tree.label != 2:
+                        test_correct[key]['bin_phase'] += bin_corr[0].sum().item()
+                        test_correct[key]['bin_sents'] += bin_corr[0][-1].item()
+
+                        if len(bin_corr) == 2:
+                            test_correct[key]['bin_phase_v2'] += bin_corr[0].sum().item()
+                            test_correct[key]['bin_sents_v2'] += bin_corr[0][-1].item()
+                        else:
+                            test_correct[key]['bin_phase_v2'] = test_correct[key]['bin_phase']
+                            test_correct[key]['bin_sents_v2'] = test_correct[key]['bin_sents']
 
                 tree.clean()
 
             time.sleep(1)
 
-            if test_bin_p_correct_2 == 0:
-                print('test phase acc: %.2f%%, test sents acc: %.2f%%, binary phase acc: %.2f%%, binary sents acc: '
-                      '%.2f%% '
-                      % (test_p_correct * 100 / test_p_total, test_s_correct * 100 / len(test_dataset),
-                         test_bin_p_correct_1 * 100 / test_bin_p_total, test_bin_s_correct_1 * 100 / test_bin_s_total))
-            else:
-                print('test phase acc: %.2f%%, test sents acc: %.2f%%, binary phase acc: %.2f%%, binary sents acc: '
-                      '%.2f%%, binary phase v2 acc: %.2f%%, binary sents v2 acc: %.2f%% '
-                      % (test_p_correct * 100 / test_p_total, test_s_correct * 100 / len(test_dataset),
-                         test_bin_p_correct_1 * 100 / test_bin_p_total, test_bin_s_correct_1 * 100 / test_bin_s_total,
-                         test_bin_p_correct_2 * 100 / test_bin_p_total, test_bin_s_correct_2 * 100 / test_bin_s_total))
+            test_total['bin_phase_v2'] = test_total['bin_phase']
+            test_total['bin_sents_v2'] = test_total['bin_sents']
+            test_total['full_bin_phase_v2'] = test_total['full_bin_phase']
 
-        if dev_bin_p_correct_2 == 0:
-            print(
-                "best dev phase acc: %.2f%%, sents acc: %.2f%%, binary phase acc: %.2f%%, sents acc: %.2f%% (epoch: %d)" % (
-                    dev_p_correct * 100 / dev_p_total, dev_s_correct * 100 / dev_s_total,
-                    dev_bin_p_correct_1 * 100 / dev_bin_p_total, dev_bin_s_correct_1 * 100 / dev_bin_s_total,
-                    best_epoch))
-            print(
-                "best tst phase corr: %.2f%%, sents acc: %.2f%%, binary phase acc: %.2f%%, sents acc: %.2f%% (epoch: %d)" % (
-                    test_p_correct * 100 / test_p_total, test_s_correct * 100 / len(test_dataset),
-                    test_bin_p_correct_1 * 100 / test_bin_p_total, test_bin_s_correct_1 * 100 / test_bin_s_total,
-                    best_epoch))
-        else:
-            print(
-                "best dev phase acc: %.2f%%, sents acc: %.2f%%, binary phase acc: %.2f%%, sents acc: %.2f%%, "
-                "binary phase v2 acc: %.2f%%, sents v2 acc: %.2f%% (epoch: %d)" % (
-                    dev_p_correct * 100 / dev_p_total, dev_s_correct * 100 / dev_s_total,
-                    dev_bin_p_correct_1 * 100 / dev_bin_p_total, dev_bin_s_correct_1 * 100 / dev_bin_s_total,
-                    dev_bin_p_correct_2 * 100 / dev_bin_p_total, dev_bin_s_correct_2 * 100 / dev_bin_s_total,
-                    best_epoch))
-            print(
-                "best tst phase corr: %.2f%%, sents acc: %.2f%%, binary phase acc: %.2f%%, sents acc: %.2f%%, "
-                "binary phase v2 acc: %.2f%%, sents v2 acc: %.2f%%  (epoch: %d)" % (
-                    test_p_correct * 100 / test_p_total, test_s_correct * 100 / len(test_dataset),
-                    test_bin_p_correct_1 * 100 / test_bin_p_total, test_bin_s_correct_1 * 100 / test_bin_s_total,
-                    test_bin_p_correct_2 * 100 / test_bin_p_total, test_bin_s_correct_2 * 100 / test_bin_s_total,
-                    best_epoch))
-        add_scalar_summary(summary_writer, 'test/fine phase acc', (test_p_correct * 100 / test_p_total), epoch)
-        add_scalar_summary(summary_writer, 'test/fine sents acc', (test_s_correct * 100 / len(test_dataset)), epoch)
-        add_scalar_summary(summary_writer, 'test/binary phase acc', (test_bin_p_correct_1 * 100 / test_bin_p_total),
-                           epoch)
-        add_scalar_summary(summary_writer, 'test/binary sents acc', (test_bin_s_correct_1 * 100 / test_bin_s_total),
-                           epoch)
+            for key in update:
+                log_print('test' + key, test_correct[key]['fine_phase'] * 100 / test_total['fine_phase'],
+                          test_correct[key]['fine_sents'] * 100 / test_total['fine_sents'],
+                          test_correct[key]['bin_phase'] * 100 / test_total['bin_phase'],
+                          test_correct[key]['full_bin_phase'] * 100 / test_total['full_bin_phase'],
+                          test_correct[key]['bin_sents'] * 100 / test_total['bin_sents'],
+                          test_correct[key]['bin_phase_v2'] * 100 / test_total['bin_phase_v2'],
+                          test_correct[key]['full_bin_phase_v2'] * 100 / test_total['full_bin_phase_v2'],
+                          test_correct[key]['bin_sents_v2'] * 100 / test_total['bin_sents_v2'])
 
-        if test_bin_p_correct_2 != 0:
-            add_scalar_summary(summary_writer, 'test/binary phase v2 acc', (test_bin_p_correct_2 * 100 / test_bin_p_total),
-                               epoch)
-            add_scalar_summary(summary_writer, 'test/binary sents v2  acc', (test_bin_s_correct_2 * 100 / test_bin_s_total),
-                               epoch)
+        for key in update:
+            log_print('best test_' + key, test_correct[key]['fine_phase'] * 100 / test_total['fine_phase'],
+                      test_correct[key]['fine_sents'] * 100 / test_total['fine_sents'],
+                      test_correct[key]['bin_phase'] * 100 / test_total['bin_phase'],
+                      test_correct[key]['full_bin_phase'] * 100 / test_total['full_bin_phase'],
+                      test_correct[key]['bin_sents'] * 100 / test_total['bin_sents'],
+                      test_correct[key]['bin_phase_v2'] * 100 / test_total['bin_phase_v2'],
+                      test_correct[key]['full_bin_phase_v2'] * 100 / test_total['full_bin_phase_v2'],
+                      test_correct[key]['bin_sents_v2'] * 100 / test_total['bin_sents_v2'])
+
+        for key1 in all_cite_version:
+            for key2 in all_cite_version:
+                add_scalar_summary(test_writer_dict[key1], 'test/' + key2, test_correct[key1][key2]*100 / test_total[key2], epoch)
+
+        for key in all_cite_version:
+            log_print('Best Epoch '+ str(best_epoch[key]) + ' best test_' + key,
+                      test_correct[key]['fine_phase'] * 100 / test_total['fine_phase'],
+                      test_correct[key]['fine_sents'] * 100 / test_total['fine_sents'],
+                      test_correct[key]['bin_phase'] * 100 / test_total['bin_phase'],
+                      test_correct[key]['full_bin_phase'] * 100 / test_total['full_bin_phase'],
+                      test_correct[key]['bin_sents'] * 100 / test_total['bin_sents'],
+                      test_correct[key]['bin_phase_v2'] * 100 / test_total['bin_phase_v2'],
+                      test_correct[key]['full_bin_phase_v2'] * 100 / test_total['full_bin_phase_v2'],
+                      test_correct[key]['bin_sents_v2'] * 100 / test_total['bin_sents_v2'])
 
         if optim_method == "SGD" and epoch % schedule == 0:
-            lr = learning_rate / (1.0 + epoch * decay_rate)
+            lr = learning_rate / (epoch * decay_rate)
             optimizer = optim.SGD(network.parameters(), lr=lr, momentum=momentum, weight_decay=gamma, nesterov=True)
 
     if args.tensorboard:
