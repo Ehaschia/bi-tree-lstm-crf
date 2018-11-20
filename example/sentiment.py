@@ -63,9 +63,11 @@ def main():
     parser.add_argument('--td_dir', type=str, required=True)
     parser.add_argument('--attention', action='store_true')
     parser.add_argument('--coattention_dim', type=int, default=150)
-    parser.add_argument('--elmo', action='store_true')
+    parser.add_argument('--elmo', choices=['none', 'only', 'cat'])
     parser.add_argument('--elmo_weight', type=str,
                         default='/home/ehaschia/Code/dataset/elmo/elmo_2x4096_512_2048cnn_2xhighway_weights.hdf5')
+    parser.add_argument('--elmo_config', type=str,
+                        default='/home/ehaschia/Code/dataset/elmo/elmo_2x4096_512_2048cnn_2xhighway_options.json')
 
     # load tree
     args = parser.parse_args()
@@ -83,6 +85,7 @@ def main():
     coattention_dim = args.coattention_dim
     elmo = args.elmo
     elmo_weight = args.elmo_weight
+    elmo_config = args.elmo_config
 
     all_cite_version = ['fine_phase', 'fine_sents', 'bin_phase', 'bin_sents',
                         'bin_phase_v2', 'bin_sents_v2', 'full_bin_phase', 'full_bin_phase_v2']
@@ -127,8 +130,8 @@ def main():
     logger.info("Loading Embedding")
 
     # load embedding
-    if embedd_mode == 'random' or elmo:
-        embedd_dim = 1024 if elmo else 300
+    if embedd_mode == 'random':
+        embedd_dim = 300
         embedd_dict = None
     else:
         embedd_dict, embedd_dim = utils.load_embedding_dict(embedd_mode, args.embedding_path)
@@ -152,7 +155,7 @@ def main():
             print('oov: %d' % oov)
         return torch.from_numpy(table)
 
-    if elmo:
+    if elmo is 'only':
         word_table = None
     else:
         word_table = construct_word_embedding_table()
@@ -164,28 +167,29 @@ def main():
                            embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf, p_tree=args.p_tree,
                            p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn, device=device,
                            pred_dense_layer=pred_dense_layer, attention=attention, coattention_dim=coattention_dim,
-                           elmo=elmo, elmo_weight=elmo_weight).to(device)
+                           elmo=elmo, elmo_weight=elmo_weight, elmo_config=elmo_config).to(device)
     elif model_mode == 'BiTreeLSTM':
         network = BiTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                              args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num, args.num_labels,
                              embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf, p_tree=args.p_tree,
                              p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn, device=device,
                              pred_dense_layer=pred_dense_layer, attention=attention, coattention_dim=coattention_dim,
-                             elmo=elmo, elmo_weight=elmo_weight).to(device)
+                             elmo=elmo, elmo_weight=elmo_weight, elmo_config=elmo_config).to(device)
     elif model_mode == 'CRFTreeLSTM':
         network = CRFTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                               args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num, args.num_labels,
                               embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf, p_tree=args.p_tree,
                               p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn, device=device,
                               pred_dense_layer=pred_dense_layer, attention=attention, coattention_dim=coattention_dim,
-                              elmo=elmo, elmo_weight=elmo_weight).to(device)
+                              elmo=elmo, elmo_weight=elmo_weight, elmo_config=elmo_config).to(device)
     elif model_mode == 'CRFBiTreeLSTM':
         network = CRFBiTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                                 args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
                                 args.num_labels, embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
                                 p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn,
                                 device=device, pred_dense_layer=pred_dense_layer, attention=attention,
-                                coattention_dim=coattention_dim, elmo=elmo, elmo_weight=elmo_weight).to(device)
+                                coattention_dim=coattention_dim, elmo=elmo, elmo_weight=elmo_weight,
+                                elmo_config=elmo_config).to(device)
     elif model_mode == 'LVeGTreeLSTM':
         network = LVeGTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                                args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
@@ -193,28 +197,32 @@ def main():
                                p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn,
                                device=device, comp=args.lveg_comp, g_dim=args.gaussian_dim,
                                pred_dense_layer=pred_dense_layer, attention=attention,
-                               coattention_dim=coattention_dim, elmo=elmo, elmo_weight=elmo_weight).to(device)
+                               coattention_dim=coattention_dim, elmo=elmo, elmo_weight=elmo_weight,
+                               elmo_config=elmo_config).to(device)
     elif model_mode == 'LVeGBiTreeLSTM':
         network = LVeGBiTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                                  args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
                                  args.num_labels, embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
                                  p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn,
                                  device=device, comp=args.lveg_comp, g_dim=args.gaussian_dim, attention=attention,
-                                 coattention_dim=coattention_dim, elmo=elmo, elmo_weight=elmo_weight).to(device)
+                                 coattention_dim=coattention_dim, elmo=elmo, elmo_weight=elmo_weight,
+                                 elmo_config=elmo_config).to(device)
     elif model_mode == 'BiCRFBiTreeLSTM':
         network = BiCRFBiTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                                   args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
                                   args.num_labels, embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
                                   p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn,
                                   device=device, pred_dense_layer=pred_dense_layer, attention=attention,
-                                  coattention_dim=coattention_dim, elmo=elmo, elmo_weight=elmo_weight).to(device)
+                                  coattention_dim=coattention_dim, elmo=elmo, elmo_weight=elmo_weight,
+                                  elmo_config=elmo_config).to(device)
     elif model_mode == 'BiCRFTreeLSTM':
         network = BiCRFTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                                 args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
                                 args.num_labels, embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
                                 p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn,
                                 device=device, pred_dense_layer=pred_dense_layer, attention=attention,
-                                coattention_dim=coattention_dim, elmo=elmo, elmo_weight=elmo_weight).to(device)
+                                coattention_dim=coattention_dim, elmo=elmo, elmo_weight=elmo_weight,
+                                elmo_config=elmo_config).to(device)
     else:
         raise NotImplementedError
 

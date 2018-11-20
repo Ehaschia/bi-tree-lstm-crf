@@ -47,8 +47,9 @@ td_dir = 'log'
 
 attention = True
 coattention_dim = 150
-elmo = True
-elmo_weight = 'tmp'
+elmo = 'none'
+elmo_weight = 'elmo_2x4096_512_2048cnn_2xhighway_weights.hdf5'
+elmo_config = 'elmo_2x4096_512_2048cnn_2xhighway_options.json'
 lveg_comp = [1]
 gaussian_dim = [1]
 
@@ -91,9 +92,10 @@ if tensorboard:
     base_dict['tensorboard'] = '--tensorboard '
 base_dict['td_dir'] = '--td_dir ' + td_dir + ' '
 
-if elmo:
-    base_dict['elmo'] = '--elmo '
+
+base_dict['elmo'] = '--elmo ' + elmo + ' '
 base_dict['elmo_weight'] = '--elmo_weight ' + elmo_weight + ' '
+base_dict['elmo_config'] = '--elmo_config ' + elmo_config + ' '
 
 crf_dict = copy.copy(base_dict)
 bicrf_dict = copy.copy(base_dict)
