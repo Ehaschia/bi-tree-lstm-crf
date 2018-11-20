@@ -3,7 +3,11 @@ import os
 
 # script paramter
 script_name = 'tmp'
+model_dir = '/home/liwenzhang/code/sentiment/bi-tree-lstm-crf'
 gpu_id = 0
+pbs_id = 13
+pbs_data = "#PBS -l walltime=1000:00:00 \n#PBS -N node13 \n#PBS -l nodes=sist-gpu" + str(pbs_id) + \
+           ":ppn=1 \n#PBS -S /bin/bash \n#PBS -k oe \n#PBS -q sist-tukw \n#PBS -u zhanglw"
 # batch script parameter
 run_num = 1
 run_prefix = 1
@@ -165,6 +169,9 @@ if not os.path.exists('script'):
 for i in range(run_num):
     with open('script/run' + str(run_prefix + i) + '.sh', 'w') as f:
         f.write('#!/usr/bin/env bash\n')
+        f.write(pbs_data + '\n')
+        f.write('source activate allen\n')
+        f.write('cd ' + model_dir + '\n')
 
 cnt = 0
 for key in scripts_dict.keys():
