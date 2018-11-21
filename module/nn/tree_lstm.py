@@ -635,7 +635,7 @@ class BiCRFBiTreeLstm(BiTreeLstm):
                                               attention=attention, coattention_dim=coattention_dim, elmo=elmo,
                                               elmo_weight=elmo_weight, elmo_config=elmo_config)
         crf_input_dim = coattention_dim if self.use_attention else output_dim
-        self.crf = BinaryTreeCRF(crf_input_dim, output_dim, num_labels, attention=self.use_attention,
+        self.crf = BinaryTreeCRF(crf_input_dim, num_labels, attention=self.use_attention,
                                  pred_mode=pred_mode, only_bu=False, softmax_in_dim=softmax_in_dim)
         self.ce_loss = None
         self.pred_layer = None
