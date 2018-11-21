@@ -1,8 +1,8 @@
 __author__ = 'Ehaschia'
 
 import argparse, sys, os
-sys.path.append('/home/ehaschia/Code/bi-tree-lstm-crf')
 
+sys.path.append('/home/ehaschia/Code/bi-tree-lstm-crf')
 
 import time
 
@@ -91,13 +91,9 @@ def main():
                         'bin_phase_v2', 'bin_sents_v2', 'full_bin_phase', 'full_bin_phase_v2']
 
     if args.tensorboard:
-        test_writer_dict = {}
         summary_writer = SummaryWriter(log_dir=args.td_dir + '/' + args.td_name)
         summary_writer.add_text('parameters', str(args))
-        for key in all_cite_version:
-            test_writer_dict[key] = SummaryWriter(log_dir=args.td_dir + '/' + args.td_name + '_' + key)
     else:
-        test_writer_dict = None
         summary_writer = None
 
     def add_scalar_summary(summary_writer, name, value, step):
@@ -272,7 +268,6 @@ def main():
               % (fine_phase_acc, fine_sents_acc, bin_phase_acc, full_bin_phase_acc, bin_sents_acc,
                  bin_phase_v2_acc, full_bin_phase_v2_acc, bin_sents_v2_acc))
 
-
     for epoch in range(1, args.epoch + 1):
         train_dataset.shuffle()
 
@@ -320,7 +315,8 @@ def main():
                     'bin_phase_v2': 0.0, 'bin_sents_v2': 0.0, 'full_bin_phase': 0.0, 'full_bin_phase_v2': 0.0}
         dev_tot = {'fine_phase': 0.0, 'fine_sents': float(len(dev_dataset)), 'bin_phase': 0.0, 'bin_sents': 0.0,
                    'bin_phase_v2': 0.0, 'bin_sents_v2': 0.0, 'full_bin_phase': 0.0, 'full_bin_phase_v2': 0.0}
-
+        final_test_corr = {'fine_phase': 0.0, 'fine_sents': 0.0, 'bin_phase': 0.0, 'bin_sents': 0.0,
+                           'bin_phase_v2': 0.0, 'bin_sents_v2': 0.0, 'full_bin_phase': 0.0, 'full_bin_phase_v2': 0.0}
         for i in tqdm(range(len(dev_dataset))):
             tree = dev_dataset[i]
             p_corr, preds, bin_corr, bin_preds, bin_mask = network.predict(tree)
@@ -431,7 +427,7 @@ def main():
             test_total['full_bin_phase_v2'] = test_total['full_bin_phase']
 
             for key in update:
-                log_print('test' + key, test_correct[key]['fine_phase'] * 100 / test_total['fine_phase'],
+                log_print('test ' + key, test_correct[key]['fine_phase'] * 100 / test_total['fine_phase'],
                           test_correct[key]['fine_sents'] * 100 / test_total['fine_sents'],
                           test_correct[key]['bin_phase'] * 100 / test_total['bin_phase'],
                           test_correct[key]['full_bin_phase'] * 100 / test_total['full_bin_phase'],
@@ -440,8 +436,9 @@ def main():
                           test_correct[key]['full_bin_phase_v2'] * 100 / test_total['full_bin_phase_v2'],
                           test_correct[key]['bin_sents_v2'] * 100 / test_total['bin_sents_v2'])
 
-        for key in update:
-            log_print('best test_' + key, test_correct[key]['fine_phase'] * 100 / test_total['fine_phase'],
+        for key in all_cite_version:
+            log_print('Best Epoch ' + str(best_epoch[key]) + ' test_' + key,
+                      test_correct[key]['fine_phase'] * 100 / test_total['fine_phase'],
                       test_correct[key]['fine_sents'] * 100 / test_total['fine_sents'],
                       test_correct[key]['bin_phase'] * 100 / test_total['bin_phase'],
                       test_correct[key]['full_bin_phase'] * 100 / test_total['full_bin_phase'],
@@ -451,19 +448,24 @@ def main():
                       test_correct[key]['bin_sents_v2'] * 100 / test_total['bin_sents_v2'])
 
         for key1 in all_cite_version:
+            best_score = 0.0
             for key2 in all_cite_version:
-                add_scalar_summary(test_writer_dict[key1], 'test/' + key2, test_correct[key1][key2]*100 / test_total[key2], epoch)
+                if test_correct[key2][key1] > best_score:
+                    best_score = test_correct[key2][key1]
+            final_test_corr[key1] = best_score
 
         for key in all_cite_version:
-            log_print('Best Epoch '+ str(best_epoch[key]) + ' best test_' + key,
-                      test_correct[key]['fine_phase'] * 100 / test_total['fine_phase'],
-                      test_correct[key]['fine_sents'] * 100 / test_total['fine_sents'],
-                      test_correct[key]['bin_phase'] * 100 / test_total['bin_phase'],
-                      test_correct[key]['full_bin_phase'] * 100 / test_total['full_bin_phase'],
-                      test_correct[key]['bin_sents'] * 100 / test_total['bin_sents'],
-                      test_correct[key]['bin_phase_v2'] * 100 / test_total['bin_phase_v2'],
-                      test_correct[key]['full_bin_phase_v2'] * 100 / test_total['full_bin_phase_v2'],
-                      test_correct[key]['bin_sents_v2'] * 100 / test_total['bin_sents_v2'])
+            add_scalar_summary(summary_writer, 'test/' + key, (final_test_corr[key] * 100 / dev_tot[key]), epoch)
+
+        log_print('Best ' + str(epoch) + ' Final test_',
+                  final_test_corr['fine_phase'] * 100 / test_total['fine_phase'],
+                  final_test_corr['fine_sents'] * 100 / test_total['fine_sents'],
+                  final_test_corr['bin_phase'] * 100 / test_total['bin_phase'],
+                  final_test_corr['full_bin_phase'] * 100 / test_total['full_bin_phase'],
+                  final_test_corr['bin_sents'] * 100 / test_total['bin_sents'],
+                  final_test_corr['bin_phase_v2'] * 100 / test_total['bin_phase_v2'],
+                  final_test_corr['full_bin_phase_v2'] * 100 / test_total['full_bin_phase_v2'],
+                  final_test_corr['bin_sents_v2'] * 100 / test_total['bin_sents_v2'])
 
         if optim_method == "SGD" and epoch % schedule == 0:
             lr = learning_rate / (epoch * decay_rate)
