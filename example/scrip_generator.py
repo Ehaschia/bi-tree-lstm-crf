@@ -109,10 +109,10 @@ crf_dict['model_mode'] = '--model_mode CRF' + model_mode + ' '
 bicrf_dict['model_mode'] = '--model_mode BiCRF' + model_mode + ' '
 lveg_dict['model_mode'] = '--model_mode LVeG' + model_mode + ' '
 
-base_dict['td_name'] = '--td_name ' + td_name + ' '
-crf_dict['td_name'] = '--td_name crf_' + td_name + ' '
-bicrf_dict['td_name'] = '--td_name bicrf_' + td_name + ' '
-lveg_dict['td_name'] = '--td_name lveg_' + td_name + ' '
+base_dict['td_name'] = '--td_name base-' + td_name + ' '
+crf_dict['td_name'] = '--td_name crf-' + td_name + ' '
+bicrf_dict['td_name'] = '--td_name bicrf-' + td_name + ' '
+lveg_dict['td_name'] = '--td_name lveg-' + td_name + ' '
 
 lveg_list = []
 for comp in lveg_comp:
