@@ -407,7 +407,7 @@ def main():
                     test_correct[key]['full_bin_phase'] += bin_corr[0].sum().item()
 
                     if len(bin_corr) == 2:
-                        test_correct[key]['full_bin_phase_v2'] += bin_corr[0].sum().item()
+                        test_correct[key]['full_bin_phase_v2'] += bin_corr[1].sum().item()
                     else:
                         test_correct[key]['full_bin_phase_v2'] = test_correct[key]['full_bin_phase']
 
@@ -416,8 +416,8 @@ def main():
                         test_correct[key]['bin_sents'] += bin_corr[0][-1].item()
 
                         if len(bin_corr) == 2:
-                            test_correct[key]['bin_phase_v2'] += bin_corr[0].sum().item()
-                            test_correct[key]['bin_sents_v2'] += bin_corr[0][-1].item()
+                            test_correct[key]['bin_phase_v2'] += bin_corr[1].sum().item()
+                            test_correct[key]['bin_sents_v2'] += bin_corr[1][-1].item()
                         else:
                             test_correct[key]['bin_phase_v2'] = test_correct[key]['bin_phase']
                             test_correct[key]['bin_sents_v2'] = test_correct[key]['bin_sents']

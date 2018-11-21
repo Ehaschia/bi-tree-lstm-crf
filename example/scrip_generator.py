@@ -92,6 +92,9 @@ if tensorboard:
     base_dict['tensorboard'] = '--tensorboard '
 base_dict['td_dir'] = '--td_dir ' + td_dir + ' '
 
+if attention:
+    base_dict['attention'] = '--attention '
+base_dict['coattention_dim'] = '--coattention_dim ' + str(coattention_dim) + ' '
 
 base_dict['elmo'] = '--elmo ' + elmo + ' '
 base_dict['elmo_weight'] = '--elmo_weight ' + elmo_weight + ' '
