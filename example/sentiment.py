@@ -455,7 +455,7 @@ def main():
             final_test_corr[key1] = best_score
 
         for key in all_cite_version:
-            add_scalar_summary(summary_writer, 'test/' + key, (final_test_corr[key] * 100 / dev_tot[key]), epoch)
+            add_scalar_summary(summary_writer, 'test/' + key, (final_test_corr[key] * 100 / test_total[key]), epoch)
 
         log_print('Best ' + str(epoch) + ' Final test_',
                   final_test_corr['fine_phase'] * 100 / test_total['fine_phase'],
