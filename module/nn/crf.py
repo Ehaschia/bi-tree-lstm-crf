@@ -227,7 +227,7 @@ class BinaryTreeCRF(nn.Module):
             if self.only_bu:
                 self.pred_layer = nn.Linear(input_size, num_labels)
             else:
-                self.pred_layer = nn.Linear(input_size, num_labels)
+                self.pred_layer = nn.Linear(input_size*2, num_labels)
             self.get_emission_score = self.single_h_pred
         elif pred_mode == 'avg_h':
             if self.only_bu:
