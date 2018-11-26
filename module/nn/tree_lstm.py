@@ -290,6 +290,15 @@ class BiTreeLstm(TreeLstm):
                                          coattention_dim=coattention_dim, elmo=elmo, elmo_weight=elmo_weight,
                                          elmo_config=elmo_config)
         # bi-directional only use for BUTreeLSTM
+        if elmo == 'none':
+            pass
+        elif elmo == 'only':
+            word_dim = 1024
+        elif elmo == 'cat':
+            word_dim += 1024
+        else:
+            raise ValueError('Elmo error!')
+
         assert tree_mode == 'BUTreeLSTM'
         self.td_rnn_cell = TDLSTMCell(word_dim, tree_input_dim, output_dim)
         if self.use_attention:
