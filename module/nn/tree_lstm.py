@@ -504,7 +504,7 @@ class CRFBiTreeLstm(BiTreeLstm):
                                             p_leaf=p_leaf, p_tree=p_tree, p_pred=p_pred, leaf_rnn=leaf_rnn,
                                             bi_leaf_rnn=bi_leaf_rnn, device=device, pred_dense_layer=pred_dense_layer,
                                             attention=attention, coattention_dim=coattention_dim, elmo=elmo,
-                                            elmo_weight=elmo_weight, elmo_config=None)
+                                            elmo_weight=elmo_weight, elmo_config=elmo_config)
         crf_input_dim = coattention_dim if self.use_attention else output_dim
         self.crf = TreeCRF(crf_input_dim, num_labels, attention=self.use_attention, pred_mode=pred_mode,
                            only_bu=False, softmax_in_dim=softmax_in_dim)
