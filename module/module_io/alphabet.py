@@ -22,15 +22,13 @@ class Alphabet(object):
         self.logger = get_logger("Alphabet")
 
     def add(self, instance):
-        if instance not in self.instance2index:
-            self.instances.append(instance)
-            self.instance2index[instance] = len(self.instance2index)
-            self.counter[instance] = 1
-        else:
-            self.counter[instance] += 1
+        self.instances.append(instance)
+        self.instance2index[instance] = len(self.instance2index)
+        self.counter[instance] = 1
 
     def get_idx(self, instance):
         if instance in self.instance2index:
+            self.counter[instance] += 1
             return self.instance2index[instance]
         else:
             if self.keep_growing:
@@ -43,7 +41,6 @@ class Alphabet(object):
 
     def get_instance(self, index):
         if self.default_value and index == self.default_index:
-            # alert should set a global variable
             return "<_UNK>"
         else:
             try:
@@ -61,7 +58,7 @@ class Alphabet(object):
         self.keep_growing = True
 
     def close(self):
-        self.replace_bruckets()
+        # self.replace_bruckets()
         self.keep_growing = False
 
     def get_content(self):
@@ -69,6 +66,12 @@ class Alphabet(object):
         return {"instance2index": self.instance2index,
                 "instances": self.instances,
                 "counter": self.counter}
+
+    def count(self, word):
+        if word in self.counter:
+            return self.counter[word]
+        else:
+            return 0
 
     def save(self, out_directory, name=None):
         saving_name = name if name else self.__name
@@ -79,21 +82,21 @@ class Alphabet(object):
         except Exception as e:
             self.logger.warn("Alphabet is not saved: %s" % repr(e))
 
-    def replace_bruckets(self):
-        lrb_idx = self.instance2index['-LRB-']
-        rrb_idx = self.instance2index['-RRB-']
-        lrb_cnt = self.counter['-LRB-']
-        rrb_cnt = self.counter['-RRB-']
-        del self.instance2index['-LRB-']
-        del self.instance2index['-RRB-']
-        del self.counter['-LRB-']
-        del self.counter['-RRB-']
-        self.instance2index['('] = lrb_idx
-        self.instance2index[')'] = rrb_idx
-        self.counter['('] = lrb_cnt
-        self.counter[')'] = rrb_cnt
-        self.instances[lrb_idx] = '('
-        self.instances[rrb_idx] = ')'
+    # def replace_bruckets(self):
+    #     lrb_idx = self.instance2index['-LRB-']
+    #     rrb_idx = self.instance2index['-RRB-']
+    #     lrb_cnt = self.counter['-LRB-']
+    #     rrb_cnt = self.counter['-RRB-']
+    #     del self.instance2index['-LRB-']
+    #     del self.instance2index['-RRB-']
+    #     del self.counter['-LRB-']
+    #     del self.counter['-RRB-']
+    #     self.instance2index['('] = lrb_idx
+    #     self.instance2index[')'] = rrb_idx
+    #     self.counter['('] = lrb_cnt
+    #     self.counter[')'] = rrb_cnt
+    #     self.instances[lrb_idx] = '('
+    #     self.instances[rrb_idx] = ')'
 
     def __from_json(self, data):
         self.instances = data['instances']

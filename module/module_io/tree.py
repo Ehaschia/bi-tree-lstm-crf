@@ -5,15 +5,15 @@ import torch
 
 class Tree(object):
 
-    def __init__(self, label, word=None, idx=None, str_word=None):
+    def __init__(self, label, word_idx=None, str_word=None):
         self.parent = None
         self.label = label
         self.children = []
-        self.word = word
+        self.word_idx = word_idx
         self.length = None
         # the depth from this node to the furthest child leaf.
         self.height = 0
-        self.idx = idx
+        self.position_idx = 0
         self.bu_state = {}
         self.td_state = {}
         self.str_word = str_word
@@ -39,7 +39,7 @@ class Tree(object):
 
     def get_sentence(self, sent):
         if self.is_leaf():
-            sent.append(self.word)
+            sent.append(self.word_idx)
         for child in self.children:
             child.get_sentence(sent)
 
@@ -53,7 +53,7 @@ class Tree(object):
         sents = []
         if self.is_leaf():
             self.length = 1
-            sents.append(self.word)
+            sents.append(self.word_idx)
             return np.array(sents)
 
         for child in self.children:
@@ -99,7 +99,7 @@ class Tree(object):
     def __eq__(self, other):
         if self.is_leaf():
             if other.is_leaf():
-                return self.idx == self.idx and self.word == self.word
+                return self.position_idx == self.position_idx and self.word_idx == self.word_idx
             else:
                 return False
         else:
@@ -122,7 +122,7 @@ class Tree(object):
         # leftmost_left_node_index + length*(pad_length) + span_num*(span_num+1)/2 - 1
         # in above tree the span for "3" is "0" and "1" so here span=2
         if self.is_leaf():
-            return self.idx
+            return self.position_idx
 
         span_num = self.height + 1
         span_idx_part = span_num * (span_num + 1) // 2 - 1
@@ -167,3 +167,20 @@ class Tree(object):
         self.td_state = {}
         self.crf_cache = {}
         self.lveg_cache = {}
+
+    def replace_unk(self, word_alphabet, embedding):
+        for child in self.children:
+            child.replace_unk(word_alphabet, embedding)
+
+        if self.is_leaf():
+            count = word_alphabet.count(self.str_word)
+            if self.str_word not in embedding:
+                lower = str.lower(self.str_word)
+                if lower in embedding:
+                    self.word_idx = word_alphabet.get_idx(lower)
+                elif lower not in embedding and count == 1:
+                    print('[TRN UNK]: ' + self.str_word)
+                    self.word_idx = 0
+                elif lower not in embedding and count > 1:
+                    print('[2]: ' + self.str_word)
+                    self.word_idx = 0

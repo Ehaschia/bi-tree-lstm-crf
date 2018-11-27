@@ -140,6 +140,15 @@ class SSTDataset(Dataset):
     def shuffle(self):
         self.random.shuffle(self.full_data)
 
+    def replace_unk(self, word_alphabet, embedding):
+        if len(self.full_data):
+            for tree in self.full_data:
+                tree.replace_unk(word_alphabet, embedding)
+        else:
+            for bucket in self.data:
+                for tree in bucket:
+                    tree.replace_unk(word_alphabet, embedding)
+
 class SSTDataloader(object):
     def __init__(self, file_path, word_alphabet):
         self.__source_file = open(file_path, 'r')
@@ -168,8 +177,14 @@ class SSTDataloader(object):
                 # leaf node
                 blank_idx = sub_line.find(' ')
                 label, str_word = int(sub_line[:blank_idx]), sub_line[blank_idx + 1:]
-                self.__word_alphabet.add(str_word)
-                return Tree(label, word=self.__word_alphabet.get_idx(str_word), str_word=str_word)
+
+                if str_word == '-LRB-':
+                    str_word = '('
+                if str_word == '-RRB-':
+                    str_word = ')'
+
+                idx = self.__word_alphabet.get_idx(str_word)
+                return Tree(label, word_idx=idx, str_word=str_word)
             else:
                 blank_idx = sub_line.find(' ')
                 label, str_children = int(sub_line[:blank_idx]), sub_line[blank_idx + 1:]
