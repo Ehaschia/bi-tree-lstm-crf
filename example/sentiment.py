@@ -116,7 +116,6 @@ def main():
     myrandom = Random(48)
 
     train_dataset = read_sst_data(args.train, word_alphabet, random=myrandom, merge=True)
-    word_alphabet.close()
     dev_dataset = read_sst_data(args.dev, word_alphabet, random=myrandom, merge=True)
     test_dataset = read_sst_data(args.test, word_alphabet, random=myrandom, merge=True)
     # close word_alphabet
@@ -173,7 +172,7 @@ def main():
         word_table = None
     else:
         word_table = construct_word_embedding_table()
-    save_embedding('data/alphabet', embedd_mode)
+    word_alphabet.close()
     embedd_dict = None
     logger.info("constructing network...")
     if model_mode == 'TreeLSTM':
