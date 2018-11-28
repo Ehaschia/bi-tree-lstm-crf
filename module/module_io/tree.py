@@ -179,7 +179,9 @@ class Tree(object):
                     lower = str.lower(self.str_word)
                     if lower in embedding:
                         # fixme here low in word alphabet or not?
+                        word_alphabet.open()
                         self.word_idx = word_alphabet.get_idx(lower)
+                        word_alphabet.close()
                     elif lower not in embedding and count == 1:
                         print('[TRN UNK]: ' + self.str_word)
                         self.word_idx = 0

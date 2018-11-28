@@ -17,7 +17,7 @@ class Alphabet(object):
             self.instances.append('<_UNK>')
             self.default_index = 0
         self.keep_growing = keep_growing
-        self.counter = {}
+        self.counter = {'<_UNK>': 1.0}
 
         self.logger = get_logger("Alphabet")
 
@@ -62,7 +62,6 @@ class Alphabet(object):
         self.keep_growing = False
 
     def get_content(self):
-        # alert not save default_value may cause error?
         return {"instance2index": self.instance2index,
                 "instances": self.instances,
                 "counter": self.counter}

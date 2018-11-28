@@ -105,7 +105,6 @@ def main():
                                   global_step=step)
 
     # alphabet
-    # TODO alphabet save
     word_alphabet = Alphabet('word', default_value=True)
 
     use_cuda = torch.cuda.is_available()
@@ -120,9 +119,7 @@ def main():
     word_alphabet.close()
     dev_dataset = read_sst_data(args.dev, word_alphabet, random=myrandom, merge=True)
     test_dataset = read_sst_data(args.test, word_alphabet, random=myrandom, merge=True)
-
     # close word_alphabet
-    logger.info("Word Alphabet Size: %d" % word_alphabet.size())
     logger.info("Loading Embedding")
 
     # load embedding
@@ -131,6 +128,7 @@ def main():
         embedd_dict = None
     else:
         embedd_dict, embedd_dim = utils.load_embedding_dict(embedd_mode, args.embedding_path)
+    to_save_embedding = {}
 
     def construct_word_embedding_table():
         scale = np.sqrt(3.0 / embedd_dim)
@@ -142,8 +140,10 @@ def main():
             for word, index in word_alphabet.items():
                 if word in embedd_dict:
                     a_embedding = embedd_dict[word]
-                elif word.lower() in embedd_dict:
-                    a_embedding = embedd_dict[word.lower()]
+                    to_save_embedding[word] = embedd_dict[word][0]
+                # elif word.lower() in embedd_dict:
+                #     a_embedding = embedd_dict[word.lower()]
+                #     to_save_embedding[word]
                 else:
                     a_embedding = np.random.uniform(-scale, scale, [1, embedd_dim]).astype(np.float32)
                     oov += 1
@@ -151,16 +151,29 @@ def main():
             print('oov: %d' % oov)
         return torch.from_numpy(table)
 
+    def save_embedding(path, name):
+        if not os.path.exists(path):
+            os.makedirs(path)
+        with open(path + '/' + name, 'w') as f:
+            for word in to_save_embedding.keys():
+                str = word
+                # embedding = np.array2string(to_save_embedding[word], precision=4, separator=' ')[1:-1]
+                f.write(str)
+                # f.write(embedding)
+                f.write('\n')
+        print('Save emebdding to ' + path + '/' + name)
+
     train_dataset.replace_unk(word_alphabet, embedd_dict, isTraining=True)
     print('DEV UNK')
     dev_dataset.replace_unk(word_alphabet, embedd_dict, isTraining=False)
     print('TEST UNK')
     test_dataset.replace_unk(word_alphabet, embedd_dict, isTraining=False)
-
+    logger.info("Word Alphabet Size: %d" % word_alphabet.size())
     if elmo is 'only':
         word_table = None
     else:
         word_table = construct_word_embedding_table()
+    save_embedding('data/alphabet', embedd_mode)
     embedd_dict = None
     logger.info("constructing network...")
     if model_mode == 'TreeLSTM':
