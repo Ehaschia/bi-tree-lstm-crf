@@ -168,19 +168,28 @@ class Tree(object):
         self.crf_cache = {}
         self.lveg_cache = {}
 
-    def replace_unk(self, word_alphabet, embedding):
+    def replace_unk(self, word_alphabet, embedding, isTraining=True):
         for child in self.children:
-            child.replace_unk(word_alphabet, embedding)
+            child.replace_unk(word_alphabet, embedding, isTraining=isTraining)
 
         if self.is_leaf():
             count = word_alphabet.count(self.str_word)
-            if self.str_word not in embedding:
-                lower = str.lower(self.str_word)
-                if lower in embedding:
-                    self.word_idx = word_alphabet.get_idx(lower)
-                elif lower not in embedding and count == 1:
-                    print('[TRN UNK]: ' + self.str_word)
-                    self.word_idx = 0
-                elif lower not in embedding and count > 1:
-                    print('[2]: ' + self.str_word)
-                    self.word_idx = 0
+            if isTraining:
+                if self.str_word not in embedding:
+                    lower = str.lower(self.str_word)
+                    if lower in embedding:
+                        # fixme here low in word alphabet or not?
+                        self.word_idx = word_alphabet.get_idx(lower)
+                    elif lower not in embedding and count == 1:
+                        print('[TRN UNK]: ' + self.str_word)
+                        self.word_idx = 0
+                    elif lower not in embedding and count > 1:
+                        print('[2]: ' + self.str_word)
+                        self.word_idx = 0
+            else:
+                if self.str_word not in embedding:
+                    lower = str.lower(self.str_word)
+                    if lower in embedding:
+                        self.word_idx = word_alphabet.get_idx(lower)
+                    elif lower not in embedding:
+                        print('[UNK]: ' + self.str_word)

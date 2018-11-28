@@ -140,14 +140,14 @@ class SSTDataset(Dataset):
     def shuffle(self):
         self.random.shuffle(self.full_data)
 
-    def replace_unk(self, word_alphabet, embedding):
+    def replace_unk(self, word_alphabet, embedding, isTraining=True):
         if len(self.full_data):
             for tree in self.full_data:
-                tree.replace_unk(word_alphabet, embedding)
+                tree.replace_unk(word_alphabet, embedding, isTraining=isTraining)
         else:
             for bucket in self.data:
                 for tree in bucket:
-                    tree.replace_unk(word_alphabet, embedding)
+                    tree.replace_unk(word_alphabet, embedding, isTraining=isTraining)
 
 class SSTDataloader(object):
     def __init__(self, file_path, word_alphabet):

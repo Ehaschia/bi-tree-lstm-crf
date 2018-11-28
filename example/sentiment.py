@@ -151,10 +151,12 @@ def main():
             print('oov: %d' % oov)
         return torch.from_numpy(table)
 
-    train_dataset.replace_unk(word_alphabet, embedd_dict)
-    dev_dataset.replace_unk(word_alphabet, embedd_dict)
-    test_dataset.replace_unk(word_alphabet, embedd_dict)
-    
+    train_dataset.replace_unk(word_alphabet, embedd_dict, isTraining=True)
+    print('DEV UNK')
+    dev_dataset.replace_unk(word_alphabet, embedd_dict, isTraining=False)
+    print('TEST UNK')
+    test_dataset.replace_unk(word_alphabet, embedd_dict, isTraining=False)
+
     if elmo is 'only':
         word_table = None
     else:
