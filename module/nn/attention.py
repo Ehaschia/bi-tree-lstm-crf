@@ -218,7 +218,6 @@ class CoAttention(nn.Module):
             r_h = inputs.detach().new(self.tree_output_dim).fill_(0.).requires_grad_()
             l = {'h': l_h, 'c': l_c}
             r = {'h': r_h, 'c': r_c}
-            tree.td_state = {}
             tree.bu_state = self.tree_cell(l, r, inputs)
         else:
             l = tree.get_child(0).bu_state

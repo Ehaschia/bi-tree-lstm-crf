@@ -130,7 +130,7 @@ class Tree(object):
         node = self.children[0]
         while not node.is_leaf():
             node = node.children[0]
-        leftmost_idx = node.idx
+        leftmost_idx = node.position_idx
         idx = span_idx_part + lenth_idx_part + leftmost_idx
         return int(idx)
 
@@ -139,6 +139,8 @@ class Tree(object):
             self.children[idx].collect_hidden_state(holder)
         if 'h' in self.td_state:
             hidden_state = torch.cat([self.bu_state['h'], self.td_state['h']], dim=0)
+            if 'output_h' in self.td_state:
+                hidden_state = torch.cat([hidden_state, self.td_state['output_h']], dim=0)
         else:
             hidden_state = self.bu_state['h']
 

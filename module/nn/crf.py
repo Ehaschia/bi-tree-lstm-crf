@@ -35,21 +35,21 @@ class TreeCRF(nn.Module):
         self.need_pred_dense = need_pred_dense
         self.dense_softmax = None
         self.pred_layer = None
-
+        self.pred_mode = pred_mode
         if pred_mode == 'single_h':
             # test
-            input_size = input_size if self.only_bu else 2*input_size
+            input_size = input_size if self.only_bu else 2 * input_size
             self.generate_pred_layer(input_size, softmax_in_dim, num_labels)
             self.get_emission_score = self.single_h_pred
         elif pred_mode == 'avg_h':
-            input_size = 2*input_size if self.only_bu else 4 * input_size
+            input_size = 2 * input_size if self.only_bu else 4 * input_size
             self.generate_pred_layer(input_size, softmax_in_dim, num_labels)
             self.get_emission_score = self.avg_h_pred
-
-        elif pred_mode == 'avg_seq_h':
-            # TODO
-            self.pred_layer = nn.Linear(2 * input_size, num_labels)
-            self.get_emission_score = self.avg_seq_h_pred
+        elif pred_mode == 'td_avg_h':
+            assert self.only_bu is False
+            pred_input_dim = input_size * 3
+            self.generate_pred_layer(pred_input_dim, softmax_in_dim, num_labels)
+            self.get_emission_score = self.td_avg_pred
         else:
             raise NotImplementedError("the pred model " + pred_mode + " is not implemented!")
         # self.attention = BiAAttention(input_size, input_size, num_labels, biaffine=biaffine)
@@ -67,6 +67,19 @@ class TreeCRF(nn.Module):
         hiddens = torch.cat(hidden_collector, dim=0)
         avg_hidden = torch.mean(hiddens, dim=0)
         return avg_hidden
+
+    def calcualte_avg(self, tree):
+        # here calcualte avg is same with bilex paper
+        cover_leaf = []
+        for child in tree.children:
+            cover_leaf += self.calcualte_avg(child)
+        if tree.is_leaf():
+            tree.td_state['output_h'] = tree.td_state['h']
+            return [tree.td_state['output_h']]
+        else:
+            # alert the dim is hard code
+            tree.td_state['output_h'] = torch.mean(torch.stack(cover_leaf, dim=0), dim=0)
+            return cover_leaf
 
     def single_h_pred(self, hidden, avg_h):
         if self.dense_softmax is not None:
@@ -87,10 +100,14 @@ class TreeCRF(nn.Module):
 
         return pred
 
-    def avg_seq_h_pred(self, hidden, avg_h):
-        # avg_h_pred + seq lstm
-        # TODO
-        raise NotImplementedError("Here not implement!")
+    def td_avg_pred(self, hidden, avg_h):
+        # based on https://www.transacl.org/ojs/index.php/tacl/article/view/925
+        if self.dense_softmax is not None:
+            softmax_in = F.relu(self.dense_softmax(hidden))
+            pred = self.pred_layer(softmax_in)
+        else:
+            pred = self.pred_layer(hidden)
+        return pred
 
     def reset_parameter(self):
         nn.init.xavier_normal_(self.trans_matrix)
@@ -122,6 +139,8 @@ class TreeCRF(nn.Module):
             h = tree.bu_state['h']
         else:
             h = torch.cat([tree.bu_state['h'], tree.td_state['h']], dim=0)
+        if self.pred_mode == 'td_avg_h' and not self.only_bu:
+            h = torch.cat([h, tree.td_state['output_h']], dim=0)
         emission_score = self.get_emission_score(h, avg_h)
         tree.crf_cache = {"emission_score": emission_score}
         return emission_score
@@ -139,8 +158,14 @@ class TreeCRF(nn.Module):
         return golden_score
 
     def loss(self, tree):
-        # fixme here loss part is wrong
-        avg_h = self.collect_avg_hidden(tree)
+        if self.pred_mode == 'td_avg_h':
+            self.calcualte_avg(tree)
+            avg_h = None
+        elif self.pred_mode == 'avg_h':
+            avg_h = self.collect_avg_hidden(tree)
+        else:
+            avg_h = None
+
         inside_score = self.forward(tree, avg_h)
         energy = logsumexp(inside_score, dim=0)
 
@@ -187,7 +212,13 @@ class TreeCRF(nn.Module):
         return holder
 
     def predict(self, tree):
-        avg_h = self.collect_avg_hidden(tree)
+        if self.pred_mode == 'td_avg_h':
+            self.calcualte_avg(tree)
+            avg_h = None
+        elif self.pred_mode == 'avg_h':
+            avg_h = self.collect_avg_hidden(tree)
+        else:
+            avg_h = None
         self.viterbi_forward(tree, avg_h)
         max_scores = tree.crf_cache['max_score']
         max_score, idx = torch.max(max_scores, 0)
@@ -200,7 +231,7 @@ class TreeCRF(nn.Module):
 class BinaryTreeCRF(nn.Module):
 
     def __init__(self, input_size, num_labels, attention=True, biaffine=True,
-                 only_bu=True, pred_mode=None, softmax_in_dim=64):
+                 only_bu=True, pred_mode=None, softmax_in_dim=64, need_pred_dense=False):
 
         '''
 
@@ -213,8 +244,6 @@ class BinaryTreeCRF(nn.Module):
                 if apply bi-affine parameter.
             **kwargs:
         '''
-        # TODO add bidirectional part
-        # TODO attention
 
         super(BinaryTreeCRF, self).__init__()
         self.input_size = input_size
@@ -222,30 +251,27 @@ class BinaryTreeCRF(nn.Module):
         self.use_attention = attention
         self.trans_matrix = Parameter(torch.Tensor(self.num_labels, self.num_labels, self.num_labels))
         self.only_bu = self.use_attention or only_bu
+        self.pred_mode = pred_mode
+        self.need_pred_dense = need_pred_dense
+        self.dense_softmax = None
 
         if pred_mode == 'single_h':
-            if self.only_bu:
-                self.pred_layer = nn.Linear(input_size, num_labels)
-            else:
-                self.pred_layer = nn.Linear(input_size*2, num_labels)
+            pred_input_dim = input_size if self.only_bu else 2*input_size
+            self.generate_pred_layer(pred_input_dim, softmax_in_dim, num_labels)
             self.get_emission_score = self.single_h_pred
         elif pred_mode == 'avg_h':
-            if self.only_bu:
-                self.dense_softmax = nn.Linear(2 * input_size, softmax_in_dim)
-            else:
-                self.dense_softmax = nn.Linear(4 * input_size, softmax_in_dim)
+            pred_input_dim = 2*input_size if self.only_bu else 4 * input_size
+            self.generate_pred_layer(pred_input_dim, softmax_in_dim, num_labels)
             self.pred_layer = nn.Linear(softmax_in_dim, num_labels)
             self.get_emission_score = self.avg_h_pred
-        elif pred_mode == 'avg_seq_h':
-            # TODO
-            self.pred_layer = nn.Linear(2 * input_size, num_labels)
-            self.get_emission_score = self.avg_seq_h_pred
+        elif pred_mode == 'td_avg_h':
+            assert self.only_bu is False
+            pred_input_dim = input_size * 3
+            self.generate_pred_layer(pred_input_dim, softmax_in_dim, num_labels)
+            self.get_emission_score = self.td_avg_pred
         else:
             raise NotImplementedError("the pred model " + pred_mode + " is not implemented!")
 
-        self.debug=False
-
-        # self.attention = BiAAttention(input_size, input_size, num_labels, biaffine=biaffine)
         self.reset_parameter()
 
     def reset_parameter(self):
@@ -257,8 +283,33 @@ class BinaryTreeCRF(nn.Module):
         avg_hidden = torch.mean(hiddens, dim=0)
         return avg_hidden
 
+    def calcualte_avg(self, tree):
+        # here calcualte avg is same with bilex paper
+        cover_leaf = []
+        for child in tree.children:
+            cover_leaf += self.calcualte_avg(child)
+        if tree.is_leaf():
+            tree.td_state['output_h'] = tree.td_state['h']
+            return [tree.td_state['output_h']]
+        else:
+            # alert the dim is hard code
+            tree.td_state['output_h'] = torch.mean(torch.stack(cover_leaf, dim=0), dim=0)
+            return cover_leaf
+
+    def generate_pred_layer(self, input_size, softmax_in_dim, num_labels):
+        if self.need_pred_dense:
+            self.dense_softmax = nn.Linear(input_size, softmax_in_dim)
+            self.pred_layer = nn.Linear(softmax_in_dim, num_labels)
+        else:
+            self.pred_layer = nn.Linear(input_size, num_labels)
+
     def single_h_pred(self, hidden, avg_h):
-        return self.pred_layer(hidden)
+        if self.dense_softmax is not None:
+            softmax_in = F.relu(self.dense_softmax(hidden))
+            pred = self.pred_layer(softmax_in)
+        else:
+            pred = self.pred_layer(hidden)
+        return pred
 
     def avg_h_pred(self, hidden, avg_h):
         # based on https://www.transacl.org/ojs/index.php/tacl/article/view/925
@@ -266,16 +317,22 @@ class BinaryTreeCRF(nn.Module):
         softmax_in = F.relu(self.dense_softmax(hidden))
         return self.pred_layer(softmax_in)
 
-    def avg_seq_h_pred(self, hidden, avg_h):
-        # avg_h_pred + seq lstm
-        # TODO
-        raise NotImplementedError("Here not implement!")
+    def td_avg_pred(self, hidden, avg_h):
+        # based on https://www.transacl.org/ojs/index.php/tacl/article/view/925
+        if self.dense_softmax is not None:
+            softmax_in = F.relu(self.dense_softmax(hidden))
+            pred = self.pred_layer(softmax_in)
+        else:
+            pred = self.pred_layer(hidden)
+        return pred
 
     def calcualte_emission_score(self, tree, avg_h):
         if self.only_bu:
             h = tree.bu_state['h']
         else:
             h = torch.cat([tree.bu_state['h'], tree.td_state['h']], dim=0)
+        if self.pred_mode == 'td_avg_h' and not self.only_bu:
+            h = torch.cat([h, tree.td_state['output_h']], dim=0)
         emission_score = self.get_emission_score(h, avg_h)
         tree.crf_cache = {"emission_score": emission_score}
         return emission_score
@@ -285,10 +342,7 @@ class BinaryTreeCRF(nn.Module):
         children_score = []
         for child in tree.children:
             children_score.append(self.forward(child, avg_h))
-        if self.debug:
-            emission_score = tree.crf_cache['debug_emission']
-        else:
-            emission_score = self.calcualte_emission_score(tree, avg_h)
+        emission_score = self.calcualte_emission_score(tree, avg_h)
         if tree.is_leaf():
             return emission_score
         else:
@@ -306,10 +360,7 @@ class BinaryTreeCRF(nn.Module):
         for child in tree.children:
             golden_score += self.golden_score(child)
 
-        if self.debug:
-            emission_score = tree.crf_cache['debug_emission'][tree.label]
-        else:
-            emission_score = tree.crf_cache['emission_score'][tree.label]
+        emission_score = tree.crf_cache['emission_score'][tree.label]
 
         if tree.is_leaf():
             return emission_score
@@ -319,10 +370,13 @@ class BinaryTreeCRF(nn.Module):
                                                                      tree.children[1].label]
 
     def loss(self, tree):
-        if self.debug:
+        if self.pred_mode == 'td_avg_h':
+            self.calcualte_avg(tree)
             avg_h = None
-        else:
+        elif self.pred_mode == 'avg_h':
             avg_h = self.collect_avg_hidden(tree)
+        else:
+            avg_h = None
 
         inside_score = self.forward(tree, avg_h)
         energy = logsumexp(inside_score, dim=0)
@@ -333,10 +387,7 @@ class BinaryTreeCRF(nn.Module):
     def viterbi_forward(self, tree, avg_h):
         for child in tree.children:
             self.viterbi_forward(child, avg_h)
-        if self.debug:
-            emission_score = tree.crf_cache['debug_emission']
-        else:
-            emission_score = self.calcualte_emission_score(tree, avg_h)
+        emission_score = self.calcualte_emission_score(tree, avg_h)
         if tree.is_leaf():
             tree.crf_cache['max_score'] = emission_score
         else:
@@ -371,10 +422,13 @@ class BinaryTreeCRF(nn.Module):
         return holder
 
     def predict(self, tree):
-        if self.debug:
+        if self.pred_mode == 'td_avg_h':
+            self.calcualte_avg(tree)
             avg_h = None
-        else:
+        elif self.pred_mode == 'avg_h':
             avg_h = self.collect_avg_hidden(tree)
+        else:
+            avg_h = None
         self.viterbi_forward(tree, avg_h)
         max_scores = tree.crf_cache['max_score']
         max_score, idx = torch.max(max_scores, 0)

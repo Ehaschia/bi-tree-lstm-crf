@@ -167,7 +167,7 @@ class SSTDataloader(object):
         tree = self.parse_tree(line)
         leaf_nodes = tree.get_yield_node()
         for i in range(len(leaf_nodes)):
-            leaf_nodes[i].idx = i
+            leaf_nodes[i].position_idx = i
         return tree
 
     def parse_tree(self, line):

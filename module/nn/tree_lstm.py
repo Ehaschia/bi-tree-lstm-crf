@@ -52,7 +52,7 @@ class TreeLstm(nn.Module):
             # self.bu_rnn_cell = BinaryTreeLSTMCell(head_word_dim, output_dim, p_tree=p_tree)
             self.bu_rnn_cell = TreeLSTMCell_flod(head_word_dim, output_dim, p_tree=p_tree)
         elif tree_mode == "BUTreeLSTM":
-            self.bu_rnn_cell = BUSLSTMCell(word_dim, tree_input_dim, output_dim, p_tree=p_tree)
+            self.bu_rnn_cell = BUSLSTMCell_v2(word_dim, tree_input_dim, output_dim, p_tree=p_tree)
         else:
             raise NotImplementedError("the tree model " + tree_mode + " is not implemented!")
 
@@ -86,10 +86,10 @@ class TreeLstm(nn.Module):
             pred_input_dim = 2 * coattention_dim if self.use_attention else 2 * output_dim
             self.generate_pred_layer(pred_input_dim, softmax_in_dim, num_labels)
             self.pred = self.avg_h_pred
-        elif pred_mode == 'avg_seq_h':
-            # TODO
-            self.pred_layer = nn.Linear(output_dim + 2 * tree_input_dim, num_labels)
-            self.pred = self.avg_seq_h_pred
+        elif pred_mode == 'td_avg_h':
+            pred_input_dim = 2*coattention_dim if self.use_attention else output_dim*2
+            self.generate_pred_layer(pred_input_dim , softmax_in_dim, num_labels)
+            self.pred = self.td_avg_pred
         else:
             raise NotImplementedError("the pred model " + pred_mode + " is not implemented!")
 
@@ -130,15 +130,15 @@ class TreeLstm(nn.Module):
         if tree.is_leaf():
             if self.tree_mode == 'SLSTM':
                 if self.leaf_affine is not None:
-                    h = self.leaf_affine(seq_out[tree.idx])
+                    h = self.leaf_affine(seq_out[tree.position_idx])
                 else:
-                    h = seq_out[tree.idx]
+                    h = seq_out[tree.position_idx]
                 c = h.detach().new(self.tree_input_dim).fill_(0.).requires_grad_()
                 tree.bu_state = {'h': h, 'c': c}
             elif self.tree_mode == 'TreeLSTM':
                 # because here the framework only depend on leaf input, so here inputs is seq_out
                 # may be we can use word embedding?
-                inputs = seq_out[tree.idx]
+                inputs = seq_out[tree.position_idx]
                 l_c = inputs.detach().new(self.tree_input_dim).fill_(0.).requires_grad_()
                 r_c = inputs.detach().new(self.tree_input_dim).fill_(0.).requires_grad_()
 
@@ -148,10 +148,10 @@ class TreeLstm(nn.Module):
                 r = {'h': r_h, 'c': r_c}
                 tree.bu_state = self.bu_rnn_cell(l, r, inputs=inputs)
             elif self.tree_mode == 'BUTreeLSTM':
-                inputs = embedding[tree.idx]
+                inputs = embedding[tree.position_idx]
                 c = inputs.detach().new(self.tree_input_dim).fill_(0.).requires_grad_()
                 if self.rnn is not None:
-                    tree.bu_state = {'x': inputs, 'h': seq_out[tree.idx], 'c': c}
+                    tree.bu_state = {'x': inputs, 'h': seq_out[tree.position_idx], 'c': c}
                 else:
                     h = inputs.detach().new(self.tree_input_dim).fill_(0.).requires_grad_()
                     tree.bu_state = {'x': inputs, 'h': h, 'c': c}
@@ -169,7 +169,7 @@ class TreeLstm(nn.Module):
         hiddens = torch.cat(hidden_collector, dim=0)
         return hiddens
 
-    def single_h_pred(self, tree, seq_out):
+    def single_h_pred(self, tree):
         hidden = self.collect_hidden_state(tree)
         hidden = self.dropout_pred(hidden)
         if self.dense_softmax is not None:
@@ -179,8 +179,20 @@ class TreeLstm(nn.Module):
             pred = self.pred_layer(hidden)
         return pred
 
-    def avg_h_pred(self, tree, seq_out):
-        # based on https://www.transacl.org/ojs/index.php/tacl/article/view/925
+    def calcualte_avg(self, tree):
+        cover_leaf = []
+        for child in tree.children:
+            cover_leaf += self.calcualte_avg(child)
+        if tree.is_leaf():
+            tree.td_state['output_h'] = tree.td_state['h']
+            return [tree.td_state['output_h']]
+        else:
+            # alert the dim is hard code
+            assert len(cover_leaf) == len(tree)
+            tree.td_state['output_h'] = torch.mean(torch.stack(cover_leaf, dim=0), dim=0)
+            return cover_leaf
+
+    def avg_h_pred(self, tree):
         hidden = self.collect_hidden_state(tree)
         hidden_size = hidden.size()
         avg_hidden = torch.mean(hidden, dim=0, keepdim=True).expand(hidden_size)
@@ -192,10 +204,16 @@ class TreeLstm(nn.Module):
             pred = self.pred_layer(hidden)
         return pred
 
-    def avg_seq_h_pred(self, tree, seq_out):
-        # avg_h_pred + seq lstm
-        # TODO
-        raise NotImplementedError("Here not implement!")
+    def td_avg_pred(self, tree):
+        # based on https://www.transacl.org/ojs/index.php/tacl/article/view/925
+        self.calcualte_avg(tree)
+        hidden = self.collect_hidden_state(tree)
+        if self.dense_softmax is not None:
+            softmax_in = F.relu(self.dense_softmax(hidden))
+            pred = self.pred_layer(softmax_in)
+        else:
+            pred = self.pred_layer(hidden)
+        return pred
 
     def forward(self, tree):
         if self.elmo is not None:
@@ -251,7 +269,7 @@ class TreeLstm(nn.Module):
     def loss(self, tree):
         seq_output = self.forward(tree)
         # pred part
-        pred_score = self.pred(tree, seq_output)
+        pred_score = self.pred(tree)
         target = tree.collect_golden_labels([])
         target = torch.LongTensor(target)
         loss = self.ce_loss(pred_score, target.view(-1).to(self.device))
@@ -259,7 +277,7 @@ class TreeLstm(nn.Module):
 
     def predict(self, tree):
         seq_output = self.forward(tree)
-        pred_score = self.pred(tree, seq_output)
+        pred_score = self.pred(tree)
         preds = torch.argmax(pred_score, dim=1).cpu()
         target = tree.collect_golden_labels([])
         target = torch.LongTensor(target)
@@ -300,7 +318,7 @@ class BiTreeLstm(TreeLstm):
             raise ValueError('Elmo error!')
 
         assert tree_mode == 'BUTreeLSTM'
-        self.td_rnn_cell = TDLSTMCell(word_dim, tree_input_dim, output_dim)
+        self.td_rnn_cell = TDLSTMCell_v2(word_dim, tree_input_dim, output_dim)
         if self.use_attention:
             self.attention = CoAttention(output_dim * 6, coattention_dim)
         if pred_mode == 'single_h':
@@ -311,54 +329,12 @@ class BiTreeLstm(TreeLstm):
             pred_input_dim = 2 * coattention_dim if self.use_attention else 4 * output_dim
             self.generate_pred_layer(pred_input_dim, softmax_in_dim, num_labels)
             self.pred = self.avg_h_pred
-        elif pred_mode == 'avg_seq_h':
-            # TODO
-            self.pred_layer = nn.Linear(output_dim + 2 * tree_input_dim, num_labels)
-            self.pred = self.avg_seq_h_pred
+        elif pred_mode == 'td_avg_h':
+            pred_input_dim = 2*coattention_dim if self.use_attention else 3 * output_dim
+            self.generate_pred_layer(pred_input_dim, softmax_in_dim, num_labels)
+            self.pred = self.td_avg_pred
         else:
             raise NotImplementedError("the pred model " + pred_mode + " is not implemented!")
-
-    def collect_hidden_state(self, tree):
-        hidden_collector = tree.collect_hidden_state([])
-        hiddens = torch.cat(hidden_collector, dim=0)
-        return hiddens
-
-    def generate_pred_layer(self, input_size, softmax_in_dim, num_labels):
-        if self.pred_dense_layer:
-            self.dense_softmax = nn.Linear(input_size, softmax_in_dim)
-            self.pred_layer = nn.Linear(softmax_in_dim, num_labels)
-        else:
-            self.pred_layer = nn.Linear(input_size, num_labels)
-
-    def single_h_pred(self, tree, seq_out):
-        hidden = self.collect_hidden_state(tree)
-        # alert may cause multi dropout here
-        hidden = self.dropout_pred(hidden)
-        if self.dense_softmax is not None:
-            softmax_in = F.relu(self.dense_softmax(hidden))
-            pred = self.pred_layer(softmax_in)
-        else:
-            pred = self.pred_layer(hidden)
-        return pred
-
-    def avg_h_pred(self, tree, seq_out):
-        # based on https://www.transacl.org/ojs/index.php/tacl/article/view/925
-        hidden = self.collect_hidden_state(tree)
-        hidden_size = hidden.size()
-        avg_hidden = torch.mean(hidden, dim=0, keepdim=True).expand(hidden_size)
-        hidden = torch.cat([avg_hidden, hidden], dim=1)
-        hidden = self.dropout_pred(hidden)
-        if self.dense_softmax is not None:
-            softmax_in = F.relu(self.dense_softmax(hidden))
-            pred = self.pred_layer(softmax_in)
-        else:
-            pred = self.pred_layer(hidden)
-        return pred
-
-    def avg_seq_h_pred(self, tree, seq_out):
-        # avg_h_pred + seq lstm
-        # TODO
-        raise NotImplementedError("Here not implement!")
 
     def recursive_tree(self, tree, seq_out, embedding):
         # tree part
@@ -370,13 +346,17 @@ class BiTreeLstm(TreeLstm):
             self.recursive_tree(tree.children[idx], seq_out, embedding)
 
         if tree.is_leaf():
-            inputs = embedding[tree.idx]
-            c = inputs.detach().new(self.tree_input_dim).fill_(0.).requires_grad_()
             if self.rnn is not None:
-                tree.bu_state = {'x': inputs, 'h': seq_out[tree.idx], 'c': c}
+                inputs = seq_out[tree.position_idx]
             else:
-                h = inputs.detach().new(self.tree_input_dim).fill_(0.).requires_grad_()
-                tree.bu_state = {'x': inputs, 'h': h, 'c': c}
+                inputs = embedding[tree.position_idx]
+            tree.bu_state = self.bu_rnn_cell(None, None, inputs)
+            # c = inputs.detach().new(self.tree_input_dim).fill_(0.).requires_grad_()
+            # if self.rnn is not None:
+            #     tree.bu_state = {'x': inputs, 'h': seq_out[tree.position_idx], 'c': c}
+            # else:
+            #     h = inputs.detach().new(self.tree_input_dim).fill_(0.).requires_grad_()
+            #     tree.bu_state = {'x': inputs, 'h': h, 'c': c}
         else:
             assert len(tree.children) == 2
             inputs = None
@@ -387,6 +367,8 @@ class BiTreeLstm(TreeLstm):
     def backward_recursive_tree(self, tree, left=False):
         if tree.parent is not None:
             tree.td_state = self.td_rnn_cell(tree.parent, left=left, root=False)
+        else:
+            tree.td_state = self.td_rnn_cell(tree, left=True, root=True)
 
         if tree.is_leaf():
             return
@@ -422,7 +404,6 @@ class BiTreeLstm(TreeLstm):
         else:
             raise ValueError('Embedding Error!')
         # sequence part
-        # fixme requires grad
         word = word.requires_grad_()
         if self.rnn is not None:
             word = word.unsqueeze(dim=0)
@@ -439,8 +420,7 @@ class BiTreeLstm(TreeLstm):
         seq_output = seq_output.squeeze(0)
         word = word.squeeze(0)
         self.recursive_tree(tree, seq_output, word)
-        # alert here we deal with the root as left branch
-        tree.td_state = self.td_rnn_cell(tree, True, root=True)
+        # tree.td_state = self.td_rnn_cell(tree, True, root=True)
         self.backward_recursive_tree(tree, left=False)
         if self.use_attention:
             self.attention(tree)
@@ -462,7 +442,7 @@ class CRFTreeLstm(TreeLstm):
                                           elmo_weight=elmo_weight, elmo_config=elmo_config)
         crf_input_dim = coattention_dim if self.use_attention else output_dim
         self.crf = TreeCRF(crf_input_dim, num_labels, attention=self.use_attention, pred_mode=pred_mode,
-                           only_bu=True)
+                           only_bu=True, need_pred_dense=pred_dense_layer)
 
         self.ce_loss = None
         self.pred_layer = None
@@ -507,7 +487,7 @@ class CRFBiTreeLstm(BiTreeLstm):
                                             elmo_weight=elmo_weight, elmo_config=elmo_config)
         crf_input_dim = coattention_dim if self.use_attention else output_dim
         self.crf = TreeCRF(crf_input_dim, num_labels, attention=self.use_attention, pred_mode=pred_mode,
-                           only_bu=False, softmax_in_dim=softmax_in_dim)
+                           only_bu=False, softmax_in_dim=softmax_in_dim, need_pred_dense=pred_dense_layer)
         self.ce_loss = None
         self.pred_layer = None
         self.pred = None
@@ -536,7 +516,6 @@ class CRFBiTreeLstm(BiTreeLstm):
 
 
 class LVeGBiTreeLstm(BiTreeLstm):
-    # alert LVeG not implement the pred dense num
     def __init__(self, tree_mode, seq_mode, pred_mode, word_dim, num_words, tree_input_dim, output_dim,
                  softmax_in_dim, seq_layer_num, num_labels, embedd_word=None, embedd_trainable=True, comp=1, g_dim=1,
                  p_in=0.5, p_leaf=0.5, p_tree=0.5, p_pred=0.5, leaf_rnn=False, bi_leaf_rnn=False, device=None,
@@ -551,7 +530,8 @@ class LVeGBiTreeLstm(BiTreeLstm):
                                              elmo_weight=elmo_weight, elmo_config=elmo_config)
         lveg_input_dim = coattention_dim if self.use_attention else output_dim
         self.lveg = BinaryTreeLVeG(lveg_input_dim, num_labels, comp, g_dim, attention=self.use_attention,
-                                   pred_mode=pred_mode, only_bu=False, softmax_in_dim=softmax_in_dim)
+                                   pred_mode=pred_mode, only_bu=False, softmax_in_dim=softmax_in_dim,
+                                   need_pred_dense=pred_dense_layer)
 
         self.nll_loss = None
         self.pred_layer = None
@@ -598,7 +578,8 @@ class LVeGTreeLstm(TreeLstm):
                                            elmo_weight=elmo_weight, elmo_config=elmo_config)
         lveg_input_dim = coattention_dim if self.use_attention else output_dim
         self.lveg = BinaryTreeLVeG(lveg_input_dim, num_labels, comp, g_dim, attention=self.use_attention,
-                                   pred_mode=pred_mode, only_bu=True, softmax_in_dim=softmax_in_dim)
+                                   pred_mode=pred_mode, only_bu=True, softmax_in_dim=softmax_in_dim,
+                                   need_pred_dense=pred_dense_layer)
 
         self.ce_loss = None
         self.pred_layer = None
@@ -645,7 +626,8 @@ class BiCRFBiTreeLstm(BiTreeLstm):
                                               elmo_weight=elmo_weight, elmo_config=elmo_config)
         crf_input_dim = coattention_dim if self.use_attention else output_dim
         self.crf = BinaryTreeCRF(crf_input_dim, num_labels, attention=self.use_attention,
-                                 pred_mode=pred_mode, only_bu=False, softmax_in_dim=softmax_in_dim)
+                                 pred_mode=pred_mode, only_bu=False, softmax_in_dim=softmax_in_dim,
+                                 need_pred_dense=pred_dense_layer)
         self.ce_loss = None
         self.pred_layer = None
         self.pred = None
@@ -690,7 +672,7 @@ class BiCRFTreeLstm(TreeLstm):
                                             elmo_weight=elmo_weight, elmo_config=elmo_config)
         crf_input_dim = coattention_dim if self.use_attention else output_dim
         self.crf = BinaryTreeCRF(crf_input_dim, num_labels, attention=False, pred_mode=pred_mode,
-                                 only_bu=True, softmax_in_dim=softmax_in_dim)
+                                 only_bu=True, softmax_in_dim=softmax_in_dim, need_pred_dense=pred_dense_layer)
         self.ce_loss = None
         self.pred_layer = None
         self.pred = None

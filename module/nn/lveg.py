@@ -9,7 +9,7 @@ from module.util import logsumexp, detect_nan
 class BinaryTreeLVeG(nn.Module):
 
     def __init__(self, input_dim, num_label, comp, gaussian_dim, attention=True, biaffine=True,
-                 only_bu=True, pred_mode=None, softmax_in_dim=64, pred_dense_layer=False):
+                 only_bu=True, pred_mode=None, softmax_in_dim=64, need_pred_dense=False):
         # alert may we can use attention as mixing weight
         # TODO let weight as attentnion
         # alert we only use the hidden state to predict the gaussian parameter, maybe we can change here
@@ -24,7 +24,7 @@ class BinaryTreeLVeG(nn.Module):
         self.softmax_in_dim = softmax_in_dim
         self.comp = comp
         self.dense_state = None
-        self.pred_dense_layer = pred_dense_layer
+        self.need_pred_dense = need_pred_dense
         self.state_weight_layer = None
         self.state_mu_layer = None
         self.state_var_layer = None
@@ -41,7 +41,7 @@ class BinaryTreeLVeG(nn.Module):
         self.trans_root_var = Parameter(torch.Tensor(num_label, comp, gaussian_dim))
         # is this useful?
         self.trans_root_weight = Parameter(torch.Tensor(num_label, comp))
-
+        self.pred_mode = pred_mode
         if pred_mode == 'single_h':
             pred_input_dim = input_dim if self.only_bu else input_dim*2
             self.generate_state_layer(pred_input_dim)
@@ -52,17 +52,18 @@ class BinaryTreeLVeG(nn.Module):
             self.generate_state_layer(pred_input_dim)
 
             self.get_emission_gm = self.avg_h_pred
-        elif pred_mode == 'avg_seq_h':
-            # TODO
-            self.pred_layer = nn.Linear(2 * input_dim, num_label)
-            self.get_emission_gm = self.avg_seq_h_pred
+        elif pred_mode == 'td_avg_h':
+            assert self.only_bu is False
+            pred_input_dim = input_dim * 3
+            self.generate_state_layer(pred_input_dim)
+            self.get_emission_gm = self.td_avg_pred
         else:
             raise NotImplementedError("the pred model " + pred_mode + " is not implemented!")
 
         self.reset_parameter()
 
     def generate_state_layer(self, input_dim):
-        if self.pred_dense_layer:
+        if self.need_pred_dense:
             self.dense_state = nn.Linear(input_dim, self.softmax_in_dim)
             self.state_weight_layer = nn.Linear(self.softmax_in_dim, self.num_label*self.comp)
             self.state_mu_layer = nn.Linear(self.softmax_in_dim, self.num_label*self.comp*self.gaussian_dim)
@@ -106,6 +107,19 @@ class BinaryTreeLVeG(nn.Module):
         avg_hidden = torch.mean(hiddens, dim=0)
         return avg_hidden
 
+    def calcualte_avg(self, tree):
+        # here calcualte avg is same with bilex paper
+        cover_leaf = []
+        for child in tree.children:
+            cover_leaf += self.calcualte_avg(child)
+        if tree.is_leaf():
+            tree.td_state['output_h'] = tree.td_state['h']
+            return [tree.td_state['output_h']]
+        else:
+            # alert the dim is hard code
+            tree.td_state['output_h'] = torch.mean(torch.stack(cover_leaf, dim=0), dim=0)
+            return cover_leaf
+
     def single_h_pred(self, hidden, avg_h):
         if self.dense_state is None:
             state_in = hidden
@@ -128,10 +142,16 @@ class BinaryTreeLVeG(nn.Module):
         state_var = self.state_var_layer(state_in).reshape(self.num_label, self.comp, self.gaussian_dim)
         return state_weight, state_mu, state_var
 
-    def avg_seq_h_pred(self, hidden, avg_h):
-        # avg_h_pred + seq lstm
-        # TODO
-        raise NotImplementedError("Here not implement!")
+    def td_avg_pred(self, hidden, avg_h):
+        # based on https://www.transacl.org/ojs/index.php/tacl/article/view/925
+        if self.dense_state is None:
+            state_in = hidden
+        else:
+            state_in = F.relu(self.dense_state(hidden))
+        state_weight = self.state_weight_layer(state_in).reshape(self.num_label, self.comp)
+        state_mu = self.state_mu_layer(state_in).reshape(self.num_label, self.comp, self.gaussian_dim)
+        state_var = self.state_var_layer(state_in).reshape(self.num_label, self.comp, self.gaussian_dim)
+        return state_weight, state_mu, state_var
 
     def calcualte_emission_gm(self, tree, avg_h):
         #
@@ -146,6 +166,8 @@ class BinaryTreeLVeG(nn.Module):
             h = tree.bu_state['h']
         else:
             h = torch.cat([tree.bu_state['h'], tree.td_state['h']], dim=0)
+        if self.pred_mode == 'td_avg_h' and not self.only_bu:
+            h = torch.cat([h, tree.td_state['output_h']], dim=0)
         state_w, state_mu, state_var = self.get_emission_gm(h, avg_h)
 
         state_var = torch.clamp(state_var, min=-10.0, max=10.0)
@@ -269,8 +291,14 @@ class BinaryTreeLVeG(nn.Module):
         # if self.debug:
         #     avg_h = None
         # else:
-        avg_h = self.collect_avg_hidden(tree)
 
+        if self.pred_mode == 'td_avg_h':
+            self.calcualte_avg(tree)
+            avg_h = None
+        elif self.pred_mode == 'avg_h':
+            avg_h = self.collect_avg_hidden(tree)
+        else:
+            avg_h = None
         inside_score, inside_mu, inside_var = self.forward(tree, avg_h)
 
         energy, _, _ = self.gaussian_multi(inside_mu.unsqueeze(1), inside_var.unsqueeze(1),
@@ -449,7 +477,13 @@ class BinaryTreeLVeG(nn.Module):
         # if self.debug:
         #     avg_h = None
         # else:
-        avg_h = self.collect_avg_hidden(tree)
+        if self.pred_mode == 'td_avg_h':
+            self.calcualte_avg(tree)
+            avg_h = None
+        elif self.pred_mode == 'avg_h':
+            avg_h = self.collect_avg_hidden(tree)
+        else:
+            avg_h = None
         inside_score, inside_mu, inside_var = self.forward(tree, avg_h)
         self.outside(tree)
 

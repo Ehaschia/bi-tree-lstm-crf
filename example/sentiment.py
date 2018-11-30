@@ -30,7 +30,7 @@ def main():
     parser.add_argument('--model_mode', choices=['TreeLSTM', 'BiTreeLSTM', 'CRFTreeLSTM', 'CRFBiTreeLSTM',
                                                  'BiCRFBiTreeLSTM', 'LVeGTreeLSTM', 'LVeGBiTreeLSTM', 'BiCRFTreeLSTM'],
                         help='architecture of model', required=True)
-    parser.add_argument('--pred_mode', choices=['single_h', 'avg_h', 'avg_seq_h'],
+    parser.add_argument('--pred_mode', choices=['single_h', 'avg_h', 'td_avg_h'],
                         required=True, help='prediction layer mode')
     parser.add_argument('--pred_dense_layer', action='store_true', help='dense_layer before predict')
     parser.add_argument('--batch_size', type=int, default=16, help='Number of batch')
@@ -82,6 +82,10 @@ def main():
     bi_rnn = args.bi_leaf_lstm
 
     attention = args.attention
+
+    if attention:
+        raise NotImplementedError("Not implement attention for new bilex!")
+
     coattention_dim = args.coattention_dim
     elmo = args.elmo
     elmo_weight = args.elmo_weight
@@ -161,12 +165,12 @@ def main():
                 # f.write(embedding)
                 f.write('\n')
         print('Save emebdding to ' + path + '/' + name)
-
-    train_dataset.replace_unk(word_alphabet, embedd_dict, isTraining=True)
-    print('DEV UNK')
-    dev_dataset.replace_unk(word_alphabet, embedd_dict, isTraining=False)
-    print('TEST UNK')
-    test_dataset.replace_unk(word_alphabet, embedd_dict, isTraining=False)
+    if embedd_mode != 'random':
+        train_dataset.replace_unk(word_alphabet, embedd_dict, isTraining=True)
+        print('DEV UNK')
+        dev_dataset.replace_unk(word_alphabet, embedd_dict, isTraining=False)
+        print('TEST UNK')
+        test_dataset.replace_unk(word_alphabet, embedd_dict, isTraining=False)
     logger.info("Word Alphabet Size: %d" % word_alphabet.size())
     if elmo is 'only':
         word_table = None
@@ -219,8 +223,8 @@ def main():
                                  args.num_labels, embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
                                  p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn,
                                  device=device, comp=args.lveg_comp, g_dim=args.gaussian_dim, attention=attention,
-                                 coattention_dim=coattention_dim, elmo=elmo, elmo_weight=elmo_weight,
-                                 elmo_config=elmo_config).to(device)
+                                 pred_dense_layer=pred_dense_layer, coattention_dim=coattention_dim, elmo=elmo,
+                                 elmo_weight=elmo_weight, elmo_config=elmo_config).to(device)
     elif model_mode == 'BiCRFBiTreeLSTM':
         network = BiCRFBiTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                                   args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,

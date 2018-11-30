@@ -144,8 +144,6 @@ class BinarySLSTM_s(nn.Module):
         self.f_r = nn.Linear(4 * self.input_dim, self.output_dim)
         self.x = nn.Linear(2 * self.input_dim, self.output_dim)
         self.o = nn.Linear(3 * self.input_dim, self.output_dim)
-        self.activate_func1 = nn.Sigmoid()
-        self.activate_func2 = nn.Tanh()
 
     def node_forward(self, inputs, child_c, child_h):
         child_h_sum = torch.sum(child_h, dim=0, keepdim=True)
@@ -175,7 +173,7 @@ class BinarySLSTM_s(nn.Module):
             child_c, child_h = zip(*map(lambda x: x.state, tree.children))
             child_c, child_h = torch.cat(child_c, dim=0), torch.cat(child_h, dim=0)
 
-        tree.state = self.node_forward(inputs[tree.idx], child_c, child_h)
+        tree.state = self.node_forward(inputs[tree.position_idx], child_c, child_h)
         return tree.state
 
 
@@ -240,10 +238,10 @@ class BinarySLSTMCell_chain(nn.Module):
     # http://docs.chainer.org/en/stable/reference/generated/chainer.functions.slstm.html
     def __init__(self, input_dim, out_dim, p_tree=0.0):
         super(BinarySLSTMCell_chain, self).__init__()
-        self.left_w = nn.Linear(input_dim, 4*out_dim)
-        self.left_v = nn.Linear(input_dim, 4*out_dim)
-        self.right_w = nn.Linear(input_dim, 4*out_dim)
-        self.right_v = nn.Linear(input_dim, 4*out_dim)
+        self.left_w = nn.Linear(input_dim, 4 * out_dim)
+        self.left_v = nn.Linear(input_dim, 4 * out_dim)
+        self.right_w = nn.Linear(input_dim, 4 * out_dim)
+        self.right_v = nn.Linear(input_dim, 4 * out_dim)
         self.tree_dropout = nn.Dropout(p_tree)
 
     def forward(self, l, r, inputs=None):
@@ -264,6 +262,7 @@ class BinarySLSTMCell_chain(nn.Module):
 
         return {'h': h.squeeze(0), 'c': c.squeeze(0)}
 
+
 class BUSLSTMCell(nn.Module):
     # based on https://www.transacl.org/ojs/index.php/tacl/article/view/925
     # implement dropout http://arxiv.org/pdf/1603.05118.pdf
@@ -281,10 +280,8 @@ class BUSLSTMCell(nn.Module):
         self.o = nn.Linear(3 * self.input_dim, self.output_dim)
         self.z = nn.Linear(2 * self.head_dim, self.head_dim)
         self.g = nn.Linear(2 * self.input_dim, self.output_dim)
-        self.activate_func1 = nn.Sigmoid()
-        self.activate_func2 = nn.Tanh()
         self.tree_dropout = nn.Dropout(p_tree)
-        self.reset_parameters()
+        # self.reset_parameters()
 
     def reset_parameters(self):
         nn.init.constant_(self.i.bias, 0)
@@ -326,6 +323,78 @@ class BUSLSTMCell(nn.Module):
 
         return {'x': x_t, 'h': h_t, 'c': c_t}
 
+class BUSLSTMCell_v2(nn.Module):
+    # based on https://www.transacl.org/ojs/index.php/tacl/article/view/925
+    # implement dropout http://arxiv.org/pdf/1603.05118.pdf
+    def __init__(self, head_dim, input_dim, output_dim, p_tree=0.0):
+        super(BUSLSTMCell_v2, self).__init__()
+
+        self.head_dim = head_dim
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+
+        self.i = nn.Linear(4 * self.input_dim, self.output_dim)
+        self.f_l = nn.Linear(4 * self.input_dim, self.output_dim)
+        self.f_r = nn.Linear(4 * self.input_dim, self.output_dim)
+        self.x_in = nn.Linear(self.head_dim, 4 * self.output_dim, bias=False)
+        self.o = nn.Linear(3 * self.input_dim, self.output_dim)
+        self.z = nn.Linear(2 * self.head_dim, self.head_dim)
+        self.g = nn.Linear(2 * self.input_dim, self.output_dim)
+        self.tree_dropout = nn.Dropout(p_tree)
+        # self.reset_parameters()
+
+    def reset_parameters(self):
+        nn.init.constant_(self.i.bias, 0)
+        nn.init.constant_(self.f_l.bias, 0)
+        nn.init.constant_(self.f_r.bias, 0)
+
+        nn.init.constant_(self.o.bias, 0)
+        nn.init.constant_(self.z.bias, 0)
+        nn.init.constant_(self.g.bias, 0)
+
+        nn.init.xavier_normal_(self.i.weight)
+        nn.init.xavier_normal_(self.f_l.weight)
+        nn.init.xavier_normal_(self.f_r.weight)
+        nn.init.xavier_normal_(self.x_in.weight)
+        nn.init.xavier_normal_(self.o.weight)
+        nn.init.xavier_normal_(self.z.weight)
+        nn.init.xavier_normal_(self.g.weight)
+
+    def forward(self, l, r, inputs=None, dim=0):
+        if inputs is not None:
+            # leaf node here ipnuts is x
+            x_t = inputs
+            x_in_t = self.x_in(x_t)
+            x_i, x_f, x_o, x_g = x_in_t.chunk(4, dim=dim)
+            i_t = F.sigmoid(x_i)
+            g_t = self.tree_dropout(F.sigmoid(x_g))
+            c_t = i_t * g_t
+            o_t = F.sigmoid(x_o)
+            h_t = o_t * F.tanh(g_t)
+        else:
+           #
+            x_l, h_l, c_l = l['x'], l['h'], l['c']
+            x_r, h_r, c_r = r['x'], r['h'], r['c']
+            child_x = torch.cat([x_l, x_r], dim=dim)
+
+            z_t = F.sigmoid(self.z(child_x))
+            x_t = z_t * x_l + (1.0 - z_t) * x_r
+            x_in_t = self.x_in(x_t)
+            x_i, x_f, x_o, x_g = x_in_t.chunk(4, dim=dim)
+            concat_input = torch.cat((h_l, h_r, c_l, c_r), dim=dim)
+            i_t = F.sigmoid(self.i(concat_input) + x_i)
+            f_lt = F.sigmoid(self.f_l(concat_input) + x_f)
+            f_rt = F.sigmoid(self.f_r(concat_input) + x_f)
+            concat_g = torch.cat([h_l, h_r], dim=dim)
+            g_t = self.tree_dropout(F.tanh(x_g + self.g(concat_g)))
+            c_t = f_lt * c_l + f_rt * c_r + i_t * g_t
+            concat_o = torch.cat([h_l, h_r, c_t], dim=dim)
+            o_t = F.sigmoid(x_o + self.o(concat_o))
+
+            h_t = o_t * F.tanh(c_t)
+
+        return {'x': x_t, 'h': h_t, 'c': c_t}
+
 
 class TDLSTMCell(nn.Module):
     # based on https://www.transacl.org/ojs/index.php/tacl/article/view/925
@@ -347,10 +416,8 @@ class TDLSTMCell(nn.Module):
         self.g_l = nn.Linear(self.head_dim + self.input_dim, self.output_dim)
         self.g_r = nn.Linear(self.head_dim + self.input_dim, self.output_dim)
 
-        self.activate_func1 = nn.Sigmoid()
-        self.activate_func2 = nn.Tanh()
         self.dropout_tree = nn.Dropout(p_tree)
-        self.reset_parameters()
+        # self.reset_parameters()
 
     def reset_parameters(self):
 
@@ -390,7 +457,53 @@ class TDLSTMCell(nn.Module):
             f_t = F.sigmoid(self.f_r(input_concat))
             o_t = F.sigmoid(self.o_r(input_concat))
             g_t = self.dropout_tree(F.tanh(self.g_r(g_concat)))
-        h_t = o_t * self.activate_func2(p_c)
+        h_t = o_t * F.tanh(p_c)
         c_t = f_t * p_c + g_t * i_t
 
+        return {'h': h_t, 'c': c_t}
+
+class TDLSTMCell_v2(nn.Module):
+
+    def __init__(self, head_dim, input_dim, output_dim, p_tree=0.0):
+        super(TDLSTMCell_v2, self).__init__()
+        self.head_dim = head_dim
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+        self.dropout_tree = nn.Dropout(p_tree)
+
+        self.x2ifgo = nn.Linear(head_dim, 4 * output_dim)
+        self.l_h2ifgo = nn.Linear(input_dim, 4 * output_dim, bias=False)
+        self.r_h2ifgo = nn.Linear(input_dim, 4 * output_dim, bias=False)
+        self.l_c2ifo = nn.Linear(input_dim, 2 * output_dim, bias=False)
+        self.r_c2ifo = nn.Linear(input_dim, 2 * output_dim, bias=False)
+        self.c2o = nn.Linear(input_dim, output_dim, bias=False)
+
+    def forward(self, p, left, dim=0, root=False):
+        # use root as left
+        if root:
+            p_x = p.bu_state['x']
+            i_x, f_x, g_x, o_x = self.x2ifgo(p_x).chunk(4, dim=dim)
+            i_gate_x = F.sigmoid(i_x)
+            g_tanh_x = self.dropout_tree(F.tanh(g_x))
+            c_t = i_gate_x * g_tanh_x
+            o_gate_x = F.sigmoid(o_x)
+            h_t = o_gate_x * F.tanh(c_t)
+
+        else:
+            p_x, p_h, p_c = p.bu_state['x'], p.td_state['h'], p.td_state['c']
+            ifgo_x = self.x2ifgo(p_x)
+            i_x, f_x, g_x, o_x = ifgo_x.chunk(4, dim=dim)
+            if left:
+                i_h, f_h, g_h, o_h = self.l_h2ifgo(p_h).chunk(4, dim=dim)
+                i_c, f_c = self.l_c2ifo(p_c).chunk(2, dim=dim)
+            else:
+                i_h, f_h, g_h, o_h = self.r_h2ifgo(p_h).chunk(4, dim=dim)
+                i_c, f_c = self.r_c2ifo(p_c).chunk(2, dim=dim)
+
+            i_gate_i = F.sigmoid(i_x + i_h + i_c)
+            i_gate_f = F.sigmoid(f_x + f_h + f_c)
+            i_tanh_g = F.tanh(g_x + g_h)
+            c_t = i_gate_i * i_tanh_g + i_gate_f * p_c
+            i_gate_o = F.sigmoid(o_x + o_h + self.c2o(c_t))
+            h_t = i_gate_o * F.tanh(c_t)
         return {'h': h_t, 'c': c_t}
