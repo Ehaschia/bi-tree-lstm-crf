@@ -52,7 +52,8 @@ class TreeLstm(nn.Module):
             # self.bu_rnn_cell = BinaryTreeLSTMCell(head_word_dim, output_dim, p_tree=p_tree)
             self.bu_rnn_cell = TreeLSTMCell_flod(head_word_dim, output_dim, p_tree=p_tree)
         elif tree_mode == "BUTreeLSTM":
-            self.bu_rnn_cell = BUSLSTMCell_v2(word_dim, tree_input_dim, output_dim, p_tree=p_tree)
+            head_word_dim = tree_input_dim if leaf_rnn else word_dim
+            self.bu_rnn_cell = BUSLSTMCell_v2(head_word_dim, tree_input_dim, output_dim, p_tree=p_tree)
         else:
             raise NotImplementedError("the tree model " + tree_mode + " is not implemented!")
 
@@ -318,7 +319,8 @@ class BiTreeLstm(TreeLstm):
             raise ValueError('Elmo error!')
 
         assert tree_mode == 'BUTreeLSTM'
-        self.td_rnn_cell = TDLSTMCell_v2(word_dim, tree_input_dim, output_dim)
+        head_word_dim = tree_input_dim if leaf_rnn else word_dim
+        self.td_rnn_cell = TDLSTMCell_v2(head_word_dim, tree_input_dim, output_dim)
         if self.use_attention:
             self.attention = CoAttention(output_dim * 6, coattention_dim)
         if pred_mode == 'single_h':
