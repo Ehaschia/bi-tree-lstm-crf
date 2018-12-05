@@ -5,7 +5,8 @@ import os
 script_dir = 'scripts'
 model_dir = '/home/liwenzhang/code/sentiment/bi-tree-lstm-crf'
 # gpu_id = 0
-max_gpu_id = 1
+gpu_prefix = 0
+max_gpu_id = 4
 
 # batch script parameter
 pbs_id = [13, 14, 15, 16]
@@ -194,16 +195,20 @@ bicrf_dict = {}
 lveg_dict = {}
 cnt = 0
 for d in dict_holder:
-    str_dict[d['td_name']] = dict2str(d, int(cnt % max_gpu_id))
+    str_dict[d['td_name']] = dict2str(d, gpu_prefix + int(cnt % max_gpu_id))
+    cnt += 1
 cnt = 0
 for d in crf_holder:
-    crf_dict[d['td_name']] = dict2str(d, int(cnt % max_gpu_id))
+    crf_dict[d['td_name']] = dict2str(d, gpu_prefix + int(cnt % max_gpu_id))
+    cnt += 1
 cnt = 0
 for d in bicrf_holder:
-    bicrf_dict[d['td_name']] = dict2str(d, int(cnt % max_gpu_id))
+    bicrf_dict[d['td_name']] = dict2str(d, gpu_prefix + int(cnt % max_gpu_id))
+    cnt += 1
 cnt = 0
 for d in lveg_holder:
-    lveg_dict[d['td_name']] = dict2str(d, int(cnt % max_gpu_id))
+    lveg_dict[d['td_name']] = dict2str(d, gpu_prefix + int(cnt % max_gpu_id))
+    cnt += 1
 
 
 def save_sample(dir, key, value):
