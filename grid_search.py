@@ -14,8 +14,8 @@ run_batch = 8
 run_suffix = [0, 1, 2, 3]
 
 # model paramter
-leaf_lstm = False  # store_true
-bi_leaf_lstm = False  # store true
+leaf_lstm = [False, True]  # store_true
+bi_leaf_lstm = True  # store true
 leaf_rnn_mode = 'LSTM'  # choice
 leaf_rnn_num = 1  # choice
 tree_mode = 'BUTreeLSTM'  # choice
@@ -24,7 +24,7 @@ pred_mode = 'td_avg_h'  # choice
 batch_size = [8, 16]
 epoch = 20  # hard
 hidden_size = [100, 200]
-pred_dense_layer = True
+pred_dense_layer = [True, False]
 softmax_dim = 64
 optim_method = 'Adam'
 lr = 0.001  # rule based on optim method
@@ -99,23 +99,10 @@ def dfs(dict, i, dict_holder):
 
     parameter_pair = parameter_list[i]
 
-    if i == 8:
-        debug=True
     if 'pred_dense_layer' not in dict and parameter_pair[0] == 'softmax_dim':
         parameter_pair = ('parameter_pair', 64)
-    skip = False
-    if 'leaf_lstm' == parameter_pair[0] and not parameter_pair[1]:
-        skip = True
-    if 'bi_leaf_lstm' == parameter_pair[0] and not parameter_pair[1]:
-        skip = True
-    if 'pred_dense_layer' == parameter_pair[0] and not parameter_pair[1]:
-        skip = True
     # next idx
     i += 1
-    if skip:
-        dfs(dict, i, dict_holder)
-        return
-
     if isinstance(parameter_pair[1], list):
         for value in parameter_pair[1]:
             new_dict = copy.copy(dict)
@@ -126,8 +113,27 @@ def dfs(dict, i, dict_holder):
         dfs(dict, i, dict_holder)
     return
 
+
 dict_holder = []
 dfs({}, 0, dict_holder)
+
+
+def delete_useless_parameter(d):
+    if not d['pred_dense_layer']:
+        del d['pred_dense_layer']
+    else:
+        d['pred_dense_layer'] = ''
+    if not d['leaf_lstm']:
+        del d['leaf_lstm']
+        del d['bi_leaf_lstm']
+    else:
+        d['leaf_lstm'] = ''
+        d['bi_leaf_lstm'] = ''
+    return d
+
+
+for d in dict_holder:
+    delete_useless_parameter(d)
 
 
 def change_model_mode(dir, mode):
