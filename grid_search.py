@@ -28,7 +28,7 @@ hidden_size = [100, 200]
 pred_dense_layer = [True, False]
 softmax_dim = 64
 optim_method = 'Adam'
-lr = 0.001  # rule based on optim method
+learning_rate = 0.001  # rule based on optim method
 momentum = 0.9
 decay_rate = 0.1
 gamma = 0.0
@@ -67,7 +67,7 @@ parameter_list = [('leaf_lstm', leaf_lstm),
                   ('pred_dense_layer', pred_dense_layer),
                   ('softmax_dim', softmax_dim),
                   ('optim_method', optim_method),
-                  ('lr', lr),
+                  ('learning_rate', learning_rate),
                   ('momentum', momentum),
                   ('decay_rate', decay_rate),
                   ('gamma', gamma),
@@ -86,7 +86,7 @@ parameter_list = [('leaf_lstm', leaf_lstm),
                   ('td_dir', td_dir),
                   ('td_name', td_name),
                   ('attention', attention),
-                  ('coattention_dim', elmo),
+                  ('coattention_dim', coattention_dim),
                   ('elmo', elmo),
                   ('elmo_weight', elmo_weight),
                   ('lveg_comp', lveg_comp),
