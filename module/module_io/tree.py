@@ -14,12 +14,16 @@ class Tree(object):
         # the depth from this node to the furthest child leaf.
         self.height = 0
         self.position_idx = 0
+        self.str_span = None
         self.bu_state = {}
         self.td_state = {}
         self.str_word = str_word
         self.crf_cache = {}
         self.lveg_cache = {}
         self.attention_cache = {}
+        self.bert_mask = None
+        self.bert_token = None
+        self.bert_segment = None
 
     def add_child(self, child):
         child.parent = self
@@ -65,15 +69,22 @@ class Tree(object):
         """
         :return: string word list, list format
         """
+        # fixme fix the lowercase
+        if self.str_span is not None:
+            return self.str_span
+
         sents = []
         if self.is_leaf():
             self.length = 1
-            sents.append(self.str_word)
+
+            self.str_span = [str.lower(self.str_word)]
+            sents.append(str.lower(self.str_word))
             return sents
 
         for child in self.children:
             sents += child.get_str_yield()
         self.length = len(sents)
+        self.str_span = sents
         return sents
 
     def get_yield_node(self):
@@ -150,6 +161,11 @@ class Tree(object):
             holder.append(hidden_state)
         return holder
 
+    def collect_str_phase(self, holder):
+        for child in self.children:
+            child.collect_str_phase(holder)
+        holder.append(' '.join(self.get_str_yield()))
+
     def collect_golden_labels(self, holder):
         for child in self.children:
             child.collect_golden_labels(holder)
@@ -194,3 +210,33 @@ class Tree(object):
                         self.word_idx = word_alphabet.get_idx(lower)
                     elif lower not in embedding:
                         print('[UNK]: ' + self.str_word)
+
+    def bert_preprocess(self, bert_tokenizer, device, distributed=False):
+        if distributed:
+            self.bert_preprocess_distributed(bert_tokenizer, device)
+        else:
+            self.bert_preprocess_centralized(bert_tokenizer, device)
+
+    def bert_preprocess_distributed(self, bert_tokenizer, device):
+        for child in self.children:
+            child.bert_preprocess_distributed(bert_tokenizer, device)
+        str_phase = ' '.join(self.get_str_yield())
+        phase = ['[CLS]'] + bert_tokenizer.tokenize(str_phase) + ['[SEP]']
+        self.bert_token = torch.tensor([bert_tokenizer.convert_tokens_to_ids(phase)]).to(device)
+        # self.bert_segment = torch.zeros_like(self.bert_token).to(device)
+
+    def bert_preprocess_centralized(self, bert_tokenizer, device):
+        phase_collector = []
+        self.collect_str_phase(phase_collector)
+        mask_collector = []
+        token_collector = []
+        for idx in range(len(phase_collector)):
+            phase_collector[idx] = ['[CLS]'] + bert_tokenizer.tokenize(phase_collector[idx]) + ['[SEP]']
+            token_collector.append(bert_tokenizer.convert_tokens_to_ids(phase_collector[idx]))
+        max_len = len(phase_collector[-1])
+        for idx in range(len(phase_collector)):
+            token_collector[idx] = token_collector[idx] + [0]*(max_len-len(token_collector[idx]))
+            mask_collector.append([1]*len(token_collector[idx]) + [0]*(max_len-len(token_collector[idx])))
+        self.bert_mask = torch.tensor(mask_collector).to(device)
+        self.bert_token = torch.tensor(token_collector).to(device)
+        self.bert_segment = torch.zeros_like(self.bert_token)

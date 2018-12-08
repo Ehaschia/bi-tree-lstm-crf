@@ -12,7 +12,7 @@ class TreeCRF(nn.Module):
     '''
 
     def __init__(self, input_size, num_labels, attention=True, biaffine=True,
-                 only_bu=True, pred_mode=None, softmax_in_dim=64, need_pred_dense=False):
+                 only_bu=True, pred_mode=None, softmax_in_dim=64, need_pred_dense=False, bert=None):
         '''
 
         Args:
@@ -36,18 +36,22 @@ class TreeCRF(nn.Module):
         self.dense_softmax = None
         self.pred_layer = None
         self.pred_mode = pred_mode
+        self.bert = bert
         if pred_mode == 'single_h':
             # test
-            input_size = input_size if self.only_bu else 2 * input_size
-            self.generate_pred_layer(input_size, softmax_in_dim, num_labels)
+            pred_input_dim = input_size if self.only_bu else 2 * input_size
+            pred_input_dim = pred_input_dim if self.bert is None else pred_input_dim + 768
+            self.generate_pred_layer(pred_input_dim , softmax_in_dim, num_labels)
             self.get_emission_score = self.single_h_pred
         elif pred_mode == 'avg_h':
-            input_size = 2 * input_size if self.only_bu else 4 * input_size
-            self.generate_pred_layer(input_size, softmax_in_dim, num_labels)
+            pred_input_dim = 2 * input_size if self.only_bu else 4 * input_size
+            pred_input_dim = pred_input_dim if self.bert is None else pred_input_dim + 768
+            self.generate_pred_layer(pred_input_dim, softmax_in_dim, num_labels)
             self.get_emission_score = self.avg_h_pred
         elif pred_mode == 'td_avg_h':
             assert self.only_bu is False
             pred_input_dim = input_size * 3
+            pred_input_dim = pred_input_dim if self.bert is None else pred_input_dim + 768
             self.generate_pred_layer(pred_input_dim, softmax_in_dim, num_labels)
             self.get_emission_score = self.td_avg_pred
         else:
@@ -80,6 +84,14 @@ class TreeCRF(nn.Module):
             # alert the dim is hard code
             tree.td_state['output_h'] = torch.mean(torch.stack(cover_leaf, dim=0), dim=0)
             return cover_leaf
+
+    def get_bert_representation(self, tree, h):
+        if self.bert is None:
+            return h
+        _, pooled_output = self.bert(tree.bert_token)
+        bert_represent = pooled_output[0].detach()
+        h = torch.cat([h, bert_represent], dim=0)
+        return h
 
     def single_h_pred(self, hidden, avg_h):
         if self.dense_softmax is not None:
@@ -141,6 +153,7 @@ class TreeCRF(nn.Module):
             h = torch.cat([tree.bu_state['h'], tree.td_state['h']], dim=0)
         if self.pred_mode == 'td_avg_h' and not self.only_bu:
             h = torch.cat([h, tree.td_state['output_h']], dim=0)
+        h = self.get_bert_representation(tree, h)
         emission_score = self.get_emission_score(h, avg_h)
         tree.crf_cache = {"emission_score": emission_score}
         return emission_score
@@ -231,7 +244,7 @@ class TreeCRF(nn.Module):
 class BinaryTreeCRF(nn.Module):
 
     def __init__(self, input_size, num_labels, attention=True, biaffine=True,
-                 only_bu=True, pred_mode=None, softmax_in_dim=64, need_pred_dense=False):
+                 only_bu=True, pred_mode=None, softmax_in_dim=64, need_pred_dense=False, bert=None):
 
         '''
 
@@ -254,19 +267,23 @@ class BinaryTreeCRF(nn.Module):
         self.pred_mode = pred_mode
         self.need_pred_dense = need_pred_dense
         self.dense_softmax = None
+        self.bert = bert
 
         if pred_mode == 'single_h':
-            pred_input_dim = input_size if self.only_bu else 2*input_size
+            pred_input_dim = input_size if self.only_bu else 2 * input_size
+            pred_input_dim = pred_input_dim if self.bert is None else pred_input_dim + 768
             self.generate_pred_layer(pred_input_dim, softmax_in_dim, num_labels)
             self.get_emission_score = self.single_h_pred
         elif pred_mode == 'avg_h':
-            pred_input_dim = 2*input_size if self.only_bu else 4 * input_size
+            pred_input_dim = 2 * input_size if self.only_bu else 4 * input_size
+            pred_input_dim = pred_input_dim if self.bert is None else pred_input_dim + 768
             self.generate_pred_layer(pred_input_dim, softmax_in_dim, num_labels)
             self.pred_layer = nn.Linear(softmax_in_dim, num_labels)
             self.get_emission_score = self.avg_h_pred
         elif pred_mode == 'td_avg_h':
             assert self.only_bu is False
             pred_input_dim = input_size * 3
+            pred_input_dim = pred_input_dim if self.bert is None else pred_input_dim + 768
             self.generate_pred_layer(pred_input_dim, softmax_in_dim, num_labels)
             self.get_emission_score = self.td_avg_pred
         else:
@@ -295,6 +312,14 @@ class BinaryTreeCRF(nn.Module):
             # alert the dim is hard code
             tree.td_state['output_h'] = torch.mean(torch.stack(cover_leaf, dim=0), dim=0)
             return cover_leaf
+
+    def get_bert_representation(self, tree, h):
+        if self.bert is None:
+            return h
+        _, pooled_output = self.bert(tree.bert_token)
+        bert_represent = pooled_output[0].detach()
+        h = torch.cat([h, bert_represent], dim=0)
+        return h
 
     def generate_pred_layer(self, input_size, softmax_in_dim, num_labels):
         if self.need_pred_dense:
@@ -333,6 +358,7 @@ class BinaryTreeCRF(nn.Module):
             h = torch.cat([tree.bu_state['h'], tree.td_state['h']], dim=0)
         if self.pred_mode == 'td_avg_h' and not self.only_bu:
             h = torch.cat([h, tree.td_state['output_h']], dim=0)
+        h = self.get_bert_representation(tree, h)
         emission_score = self.get_emission_score(h, avg_h)
         tree.crf_cache = {"emission_score": emission_score}
         return emission_score

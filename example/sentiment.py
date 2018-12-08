@@ -16,6 +16,7 @@ from module.module_io.sst_data import *
 from module.nn.tree_lstm import *
 from tensorboardX import SummaryWriter
 from module.util import detect_nan
+from pytorch_pretrained_bert import BertTokenizer, BertModel
 
 
 def main():
@@ -68,6 +69,10 @@ def main():
                         default='/home/ehaschia/Code/dataset/elmo/elmo_2x4096_512_2048cnn_2xhighway_weights.hdf5')
     parser.add_argument('--elmo_config', type=str,
                         default='/home/ehaschia/Code/dataset/elmo/elmo_2x4096_512_2048cnn_2xhighway_options.json')
+    parser.add_argument('--bert', choices=['none', 'only_in', 'cat_in', 'out', 'only_in_out', 'cat_in_out'])
+    parser.add_argument('--bert_dir', type=str, default='/home/ehaschia/Code/dataset/elmo/')
+    parser.add_argument('--bert_model', choices=['bert-base-uncased', 'bert-large-uncased', 'bert-base-cased',
+                                                 'bert-large-cased'])
 
     # load tree
     args = parser.parse_args()
@@ -90,6 +95,8 @@ def main():
     elmo = args.elmo
     elmo_weight = args.elmo_weight
     elmo_config = args.elmo_config
+
+    bert_mode = args.bert
 
     all_cite_version = ['fine_phase', 'fine_sents', 'bin_phase', 'bin_sents',
                         'bin_phase_v2', 'bin_sents_v2', 'full_bin_phase', 'full_bin_phase_v2']
@@ -160,11 +167,12 @@ def main():
         with open(path + '/' + name, 'w') as f:
             for word in to_save_embedding.keys():
                 str = word
-                # embedding = np.array2string(to_save_embedding[word], precision=4, separator=' ')[1:-1]
+                embedding = np.array2string(to_save_embedding[word], precision=4, separator=' ')[1:-1]
                 f.write(str)
-                # f.write(embedding)
+                f.write(embedding)
                 f.write('\n')
         print('Save emebdding to ' + path + '/' + name)
+
     if embedd_mode != 'random':
         train_dataset.replace_unk(word_alphabet, embedd_dict, isTraining=True)
         print('DEV UNK')
@@ -172,12 +180,39 @@ def main():
         print('TEST UNK')
         test_dataset.replace_unk(word_alphabet, embedd_dict, isTraining=False)
     logger.info("Word Alphabet Size: %d" % word_alphabet.size())
+    word_table = None
     if elmo is 'only':
-        word_table = None
+        pass
+    else:
+        word_table = construct_word_embedding_table()
+
+    if bert_mode is 'only-in' or 'only-in-both' or word_table is not None:
+        pass
     else:
         word_table = construct_word_embedding_table()
     word_alphabet.close()
     embedd_dict = None
+
+    # alert here we load bert and preprecess tree for bert
+    if bert_mode is not 'none':
+        bert_path = args.bert_dir + '/' + args.bert_model
+        bert = BertModel.from_pretrained(bert_path + '.tar.gz')
+        bert_tokenizer = BertTokenizer.from_pretrained(bert_path + '.txt')
+        distributed = False
+        if model_mode.find('CRF') != -1 or model_mode.find('LVeG') != -1:
+            distributed = True
+        for tree in train_dataset:
+            tree.bert_preprocess(bert_tokenizer, device, distributed=distributed)
+        for tree in dev_dataset:
+            tree.bert_preprocess(bert_tokenizer, device, distributed=distributed)
+        for tree in test_dataset:
+            tree.bert_preprocess(bert_tokenizer, device, distributed=distributed)
+        for parameter in bert.parameters():
+            parameter.requires_grad = False
+        bert.eval()
+    else:
+        bert = None
+
     logger.info("constructing network...")
     if model_mode == 'TreeLSTM':
         network = TreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
@@ -185,21 +220,24 @@ def main():
                            embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf, p_tree=args.p_tree,
                            p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn, device=device,
                            pred_dense_layer=pred_dense_layer, attention=attention, coattention_dim=coattention_dim,
-                           elmo=elmo, elmo_weight=elmo_weight, elmo_config=elmo_config).to(device)
+                           elmo=elmo, elmo_weight=elmo_weight, elmo_config=elmo_config, bert_mode=bert_mode,
+                           bert=bert).to(device)
     elif model_mode == 'BiTreeLSTM':
         network = BiTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                              args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num, args.num_labels,
                              embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf, p_tree=args.p_tree,
                              p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn, device=device,
                              pred_dense_layer=pred_dense_layer, attention=attention, coattention_dim=coattention_dim,
-                             elmo=elmo, elmo_weight=elmo_weight, elmo_config=elmo_config).to(device)
+                             elmo=elmo, elmo_weight=elmo_weight, elmo_config=elmo_config, bert_mode=bert_mode,
+                             bert=bert).to(device)
     elif model_mode == 'CRFTreeLSTM':
         network = CRFTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                               args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num, args.num_labels,
                               embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf, p_tree=args.p_tree,
                               p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn, device=device,
                               pred_dense_layer=pred_dense_layer, attention=attention, coattention_dim=coattention_dim,
-                              elmo=elmo, elmo_weight=elmo_weight, elmo_config=elmo_config).to(device)
+                              elmo=elmo, elmo_weight=elmo_weight, elmo_config=elmo_config,
+                              bert_mode=bert_mode, bert=bert).to(device)
     elif model_mode == 'CRFBiTreeLSTM':
         network = CRFBiTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                                 args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
@@ -207,7 +245,7 @@ def main():
                                 p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn,
                                 device=device, pred_dense_layer=pred_dense_layer, attention=attention,
                                 coattention_dim=coattention_dim, elmo=elmo, elmo_weight=elmo_weight,
-                                elmo_config=elmo_config).to(device)
+                                elmo_config=elmo_config, bert_mode=bert_mode, bert=bert).to(device)
     elif model_mode == 'LVeGTreeLSTM':
         network = LVeGTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                                args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
@@ -216,7 +254,7 @@ def main():
                                device=device, comp=args.lveg_comp, g_dim=args.gaussian_dim,
                                pred_dense_layer=pred_dense_layer, attention=attention,
                                coattention_dim=coattention_dim, elmo=elmo, elmo_weight=elmo_weight,
-                               elmo_config=elmo_config).to(device)
+                               elmo_config=elmo_config, bert_mode=bert_mode, bert=bert).to(device)
     elif model_mode == 'LVeGBiTreeLSTM':
         network = LVeGBiTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                                  args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
@@ -224,7 +262,7 @@ def main():
                                  p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn,
                                  device=device, comp=args.lveg_comp, g_dim=args.gaussian_dim, attention=attention,
                                  pred_dense_layer=pred_dense_layer, coattention_dim=coattention_dim, elmo=elmo,
-                                 elmo_weight=elmo_weight, elmo_config=elmo_config).to(device)
+                                 elmo_weight=elmo_weight, elmo_config=elmo_config, bert_mode=bert_mode, bert=bert).to(device)
     elif model_mode == 'BiCRFBiTreeLSTM':
         network = BiCRFBiTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                                   args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
@@ -232,7 +270,7 @@ def main():
                                   p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn,
                                   device=device, pred_dense_layer=pred_dense_layer, attention=attention,
                                   coattention_dim=coattention_dim, elmo=elmo, elmo_weight=elmo_weight,
-                                  elmo_config=elmo_config).to(device)
+                                  elmo_config=elmo_config, bert_mode=bert_mode, bert=bert).to(device)
     elif model_mode == 'BiCRFTreeLSTM':
         network = BiCRFTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                                 args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
@@ -240,7 +278,7 @@ def main():
                                 p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn,
                                 device=device, pred_dense_layer=pred_dense_layer, attention=attention,
                                 coattention_dim=coattention_dim, elmo=elmo, elmo_weight=elmo_weight,
-                                elmo_config=elmo_config).to(device)
+                                elmo_config=elmo_config, bert_mode=bert_mode, bert=bert).to(device)
     else:
         raise NotImplementedError
 
