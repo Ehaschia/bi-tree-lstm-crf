@@ -21,9 +21,8 @@ class Tree(object):
         self.crf_cache = {}
         self.lveg_cache = {}
         self.attention_cache = {}
-        self.bert_mask = None
-        self.bert_token = None
-        self.bert_segment = None
+        self.bert_embedding = None
+        self.bert_phase = None
 
     def add_child(self, child):
         child.parent = self
@@ -161,10 +160,10 @@ class Tree(object):
             holder.append(hidden_state)
         return holder
 
-    def collect_str_phase(self, holder):
+    def collect_bert_phase(self, holder):
         for child in self.children:
-            child.collect_str_phase(holder)
-        holder.append(' '.join(self.get_str_yield()))
+            child.collect_bert_phase(holder)
+        holder.append(self.bert_phase)
 
     def collect_golden_labels(self, holder):
         for child in self.children:
@@ -211,32 +210,48 @@ class Tree(object):
                     elif lower not in embedding:
                         print('[UNK]: ' + self.str_word)
 
-    def bert_preprocess(self, bert_tokenizer, device, distributed=False):
+    def bert_preprocess(self, bert_tokenizer, bert, device, distributed=False):
         if distributed:
-            self.bert_preprocess_distributed(bert_tokenizer, device)
+            self.bert_preprocess_distributed(bert_tokenizer, bert, device)
         else:
-            self.bert_preprocess_centralized(bert_tokenizer, device)
+            self.bert_preprocess_centralized(bert_tokenizer, bert, device)
 
-    def bert_preprocess_distributed(self, bert_tokenizer, device):
+        # alert all embedding should be saved in root node
+        sentence_node = self.get_yield_node()
+        embedding_collector = []
+        for node in sentence_node:
+            embedding_collector.append(node.bert_embedding)
+        embedding_cat = torch.stack(embedding_collector, dim=0)
+        self.bert_embedding = embedding_cat.requires_grad_(False).detach()
+
+    def bert_preprocess_distributed(self, bert_tokenizer, bert, device):
         for child in self.children:
-            child.bert_preprocess_distributed(bert_tokenizer, device)
+            child.bert_preprocess_distributed(bert_tokenizer, bert, device)
+
         str_phase = ' '.join(self.get_str_yield())
         phase = ['[CLS]'] + bert_tokenizer.tokenize(str_phase) + ['[SEP]']
-        self.bert_token = torch.tensor([bert_tokenizer.convert_tokens_to_ids(phase)]).to(device)
+        # fixme the segment is useful?
+        bert_token = torch.tensor([bert_tokenizer.convert_tokens_to_ids(phase)]).to(device)
+        #TODO here method one, max pooling the get the embedding
+        # we should test can we just use the
+        if self.is_leaf():
+            embedding, phase = bert(bert_token)
+            # fixme here debug
+            bert_embedding = embedding[-1].squeeze()[1:-1].requires_grad_(False).detach()
+            if bert_embedding.size(0) != 1:
+                self.bert_embedding, _ = torch.max(bert_embedding, dim=0)
+            else:
+                self.bert_embedding = bert_embedding[0]
+
+        else:
+            _, phase = bert(bert_token)
+        self.bert_phase = phase.detach()[0]
         # self.bert_segment = torch.zeros_like(self.bert_token).to(device)
 
-    def bert_preprocess_centralized(self, bert_tokenizer, device):
+    def bert_preprocess_centralized(self, bert_tokenizer, bert, device):
         phase_collector = []
-        self.collect_str_phase(phase_collector)
-        mask_collector = []
-        token_collector = []
-        for idx in range(len(phase_collector)):
-            phase_collector[idx] = ['[CLS]'] + bert_tokenizer.tokenize(phase_collector[idx]) + ['[SEP]']
-            token_collector.append(bert_tokenizer.convert_tokens_to_ids(phase_collector[idx]))
-        max_len = len(phase_collector[-1])
-        for idx in range(len(phase_collector)):
-            token_collector[idx] = token_collector[idx] + [0]*(max_len-len(token_collector[idx]))
-            mask_collector.append([1]*len(token_collector[idx]) + [0]*(max_len-len(token_collector[idx])))
-        self.bert_mask = torch.tensor(mask_collector).to(device)
-        self.bert_token = torch.tensor(token_collector).to(device)
-        self.bert_segment = torch.zeros_like(self.bert_token)
+        self.bert_preprocess_distributed(bert_tokenizer, bert, device)
+        self.collect_bert_phase(phase_collector)
+        phase_cat = torch.stack(phase_collector, dim=0)
+        #fixme here after the centralized, all phase are at root node
+        self.bert_phase = phase_cat.detach()

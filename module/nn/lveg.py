@@ -9,7 +9,7 @@ from module.util import logsumexp, detect_nan
 class BinaryTreeLVeG(nn.Module):
 
     def __init__(self, input_dim, num_label, comp, gaussian_dim, attention=True, biaffine=True,
-                 only_bu=True, pred_mode=None, softmax_in_dim=64, need_pred_dense=False, bert=None):
+                 only_bu=True, pred_mode=None, softmax_in_dim=64, need_pred_dense=False, bert_dim=0):
         # alert may we can use attention as mixing weight
         # TODO let weight as attentnion
         # alert we only use the hidden state to predict the gaussian parameter, maybe we can change here
@@ -28,7 +28,7 @@ class BinaryTreeLVeG(nn.Module):
         self.state_weight_layer = None
         self.state_mu_layer = None
         self.state_var_layer = None
-        self.bert = bert
+        self.bert_dim = bert_dim
 
         self.trans_weight = Parameter(torch.Tensor(num_label, num_label, num_label, comp))
         self.trans_mu_p = Parameter(torch.Tensor(num_label, num_label, num_label, comp, gaussian_dim))
@@ -45,20 +45,20 @@ class BinaryTreeLVeG(nn.Module):
         self.pred_mode = pred_mode
         if pred_mode == 'single_h':
             pred_input_dim = input_dim if self.only_bu else input_dim * 2
-            pred_input_dim = pred_input_dim if self.bert is None else pred_input_dim + 768
+            pred_input_dim = pred_input_dim + bert_dim
             self.generate_state_layer(pred_input_dim)
 
             self.get_emission_gm = self.single_h_pred
         elif pred_mode == 'avg_h':
             pred_input_dim = input_dim * 2 if self.only_bu else input_dim * 4
-            pred_input_dim = pred_input_dim if self.bert is None else pred_input_dim + 768
+            pred_input_dim = pred_input_dim + bert_dim
             self.generate_state_layer(pred_input_dim)
 
             self.get_emission_gm = self.avg_h_pred
         elif pred_mode == 'td_avg_h':
             assert self.only_bu is False
             pred_input_dim = input_dim * 3
-            pred_input_dim = pred_input_dim if self.bert is None else pred_input_dim + 768
+            pred_input_dim = pred_input_dim + bert_dim
             self.generate_state_layer(pred_input_dim)
             self.get_emission_gm = self.td_avg_pred
         else:
@@ -109,14 +109,6 @@ class BinaryTreeLVeG(nn.Module):
             tree.td_state['output_h'] = torch.mean(torch.stack(cover_leaf, dim=0), dim=0)
             return cover_leaf
 
-    def get_bert_representation(self, tree, h):
-        if self.bert is None:
-            return h
-        _, pooled_output = self.bert(tree.bert_token)
-        bert_represent = pooled_output[0].detach()
-        h = torch.cat([h, bert_represent], dim=0)
-        return h
-
     def single_h_pred(self, hidden, avg_h):
         if self.dense_state is None:
             state_in = hidden
@@ -165,7 +157,8 @@ class BinaryTreeLVeG(nn.Module):
             h = torch.cat([tree.bu_state['h'], tree.td_state['h']], dim=0)
         if self.pred_mode == 'td_avg_h' and not self.only_bu:
             h = torch.cat([h, tree.td_state['output_h']], dim=0)
-        h = self.get_bert_representation(tree, h)
+        if self.bert_dim != 0:
+            h = torch.cat([h, tree.bert_phase], dim=0)
         state_w, state_mu, state_var = self.get_emission_gm(h, avg_h)
 
         state_var = torch.clamp(state_var, min=-10.0, max=10.0)
