@@ -74,6 +74,7 @@ def main():
     parser.add_argument('--bert_dir', type=str, default='/home/ehaschia/Code/dataset/elmo/')
     parser.add_argument('--bert_model', choices=['bert-base-uncased', 'bert-large-uncased', 'bert-base-cased',
                                                  'bert-large-cased'])
+    parser.add_argument('--lower', action='store_true')
 
     # load tree
     args = parser.parse_args()
@@ -89,6 +90,7 @@ def main():
 
     attention = args.attention
 
+    lower = args.lower
     if attention:
         raise NotImplementedError("Not implement attention for new bilex!")
 
@@ -127,9 +129,9 @@ def main():
 
     myrandom = Random(48)
 
-    train_dataset = read_sst_data(args.train, word_alphabet, random=myrandom, merge=True)
-    dev_dataset = read_sst_data(args.dev, word_alphabet, random=myrandom, merge=True)
-    test_dataset = read_sst_data(args.test, word_alphabet, random=myrandom, merge=True)
+    train_dataset = read_sst_data(args.train, word_alphabet, random=myrandom, merge=True, lower=lower)
+    dev_dataset = read_sst_data(args.dev, word_alphabet, random=myrandom, merge=True, lower=lower)
+    test_dataset = read_sst_data(args.test, word_alphabet, random=myrandom, merge=True, lower=lower)
     # close word_alphabet
     logger.info("Loading Embedding")
 

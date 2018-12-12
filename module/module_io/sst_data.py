@@ -149,10 +149,12 @@ class SSTDataset(Dataset):
                 for tree in bucket:
                     tree.replace_unk(word_alphabet, embedding, isTraining=isTraining)
 
+
 class SSTDataloader(object):
-    def __init__(self, file_path, word_alphabet):
+    def __init__(self, file_path, word_alphabet, lower=False):
         self.__source_file = open(file_path, 'r')
         self.__word_alphabet = word_alphabet
+        self.__lower = lower
 
     def close(self):
         self.__source_file.close()
@@ -182,7 +184,8 @@ class SSTDataloader(object):
                     str_word = '('
                 if str_word == '-RRB-':
                     str_word = ')'
-
+                if self.__lower:
+                    str_word = str.lower(str_word)
                 idx = self.__word_alphabet.get_idx(str_word)
                 return Tree(label, word_idx=idx, str_word=str_word)
             else:
@@ -212,9 +215,9 @@ class SSTDataloader(object):
             raise SyntaxError("Input sentence is not tree structure:" + line)
 
 
-def read_sst_data(source_path, word_alphabet, max_size=None, random=None, merge=False):
+def read_sst_data(source_path, word_alphabet, max_size=None, random=None, merge=False, lower=False):
     dataset = SSTDataset(word_alphabet, random=random)
-    reader = SSTDataloader(source_path, word_alphabet)
+    reader = SSTDataloader(source_path, word_alphabet, lower=lower)
 
     counter = 0
     a_tree = reader.getNext()

@@ -69,7 +69,6 @@ class Tree(object):
         """
         :return: string word list, list format
         """
-        # fixme fix the lowercase
         if self.str_span is not None:
             return self.str_span
 
@@ -77,8 +76,8 @@ class Tree(object):
         if self.is_leaf():
             self.length = 1
 
-            self.str_span = [str.lower(self.str_word)]
-            sents.append(str.lower(self.str_word))
+            self.str_span = [self.str_word]
+            sents.append(self.str_word)
             return sents
 
         for child in self.children:
@@ -237,7 +236,6 @@ class Tree(object):
 
         str_phase = ' '.join(self.get_str_yield())
         phase = ['[CLS]'] + bert_tokenizer.tokenize(str_phase) + ['[SEP]']
-        # fixme the segment is useful?
         bert_token = torch.tensor([bert_tokenizer.convert_tokens_to_ids(phase)]).to(device)
         #TODO here method one, max pooling the get the embedding
         # we should test can we just use the
