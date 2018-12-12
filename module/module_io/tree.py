@@ -23,6 +23,7 @@ class Tree(object):
         self.attention_cache = {}
         self.bert_embedding = None
         self.bert_phase = None
+        self.elmo_embedding = None
 
     def add_child(self, child):
         child.parent = self
@@ -209,6 +210,12 @@ class Tree(object):
                         self.word_idx = word_alphabet.get_idx(lower)
                     elif lower not in embedding:
                         print('[UNK]: ' + self.str_word)
+
+    def elmo_preprocess(self, elmo_tokenizer, elmo, device):
+        str_sentence = [self.get_str_yield()]
+        character_ids = elmo_tokenizer(str_sentence).to(device)
+        self.elmo_embedding = elmo(character_ids)['elmo_representations'][0].squeeze(0).detach()
+        assert not self.elmo_embedding.requires_grad
 
     def bert_preprocess(self, bert_tokenizer, bert, device, distributed=False):
         if distributed:

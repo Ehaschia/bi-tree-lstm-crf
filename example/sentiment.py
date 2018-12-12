@@ -17,6 +17,7 @@ from module.nn.tree_lstm import *
 from tensorboardX import SummaryWriter
 from module.util import detect_nan
 from pytorch_pretrained_bert import BertTokenizer, BertModel
+from allennlp.modules.elmo import Elmo, batch_to_ids
 
 
 def main():
@@ -193,7 +194,17 @@ def main():
     word_alphabet.close()
     embedd_dict = None
 
-    # alert here we load bert and preprecess tree for bert
+    # alert here we load elmo and preprocess tree for elmo
+    if elmo != 'none':
+        elmo_model = Elmo(elmo_config, elmo_weight, 1, requires_grad=False, dropout=0.0).to(device)
+        for tree in train_dataset:
+            tree.elmo_preprocess(batch_to_ids, elmo_model, device)
+        for tree in dev_dataset:
+            tree.elmo_preprocess(batch_to_ids, elmo_model, device)
+        for tree in test_dataset:
+            tree.elmo_preprocess(batch_to_ids, elmo_model, device)
+
+    # alert here we load bert and preprocess tree for bert
     if bert_mode != 'none':
         bert_path = args.bert_dir + '/' + args.bert_model
         bert = BertModel.from_pretrained(bert_path + '.tar.gz').to(device)
@@ -224,32 +235,28 @@ def main():
                            embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf, p_tree=args.p_tree,
                            p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn, device=device,
                            pred_dense_layer=pred_dense_layer, attention=attention, coattention_dim=coattention_dim,
-                           elmo=elmo, elmo_weight=elmo_weight, elmo_config=elmo_config, bert_mode=bert_mode,
-                           bert_dim=bert_dim).to(device)
+                           elmo_mode=elmo, bert_mode=bert_mode, bert_dim=bert_dim).to(device)
     elif model_mode == 'BiTreeLSTM':
         network = BiTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                              args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num, args.num_labels,
                              embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf, p_tree=args.p_tree,
                              p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn, device=device,
                              pred_dense_layer=pred_dense_layer, attention=attention, coattention_dim=coattention_dim,
-                             elmo=elmo, elmo_weight=elmo_weight, elmo_config=elmo_config, bert_mode=bert_mode,
-                             bert_dim=bert_dim).to(device)
+                             elmo_mode=elmo, bert_mode=bert_mode, bert_dim=bert_dim).to(device)
     elif model_mode == 'CRFTreeLSTM':
         network = CRFTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                               args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num, args.num_labels,
                               embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf, p_tree=args.p_tree,
                               p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn, device=device,
                               pred_dense_layer=pred_dense_layer, attention=attention, coattention_dim=coattention_dim,
-                              elmo=elmo, elmo_weight=elmo_weight, elmo_config=elmo_config,
-                              bert_mode=bert_mode, bert_dim=bert_dim).to(device)
+                              elmo_mode=elmo, bert_mode=bert_mode, bert_dim=bert_dim).to(device)
     elif model_mode == 'CRFBiTreeLSTM':
         network = CRFBiTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                                 args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
                                 args.num_labels, embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
                                 p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn,
                                 device=device, pred_dense_layer=pred_dense_layer, attention=attention,
-                                coattention_dim=coattention_dim, elmo=elmo, elmo_weight=elmo_weight,
-                                elmo_config=elmo_config, bert_mode=bert_mode, bert_dim=bert_dim).to(device)
+                                coattention_dim=coattention_dim, elmo_mode=elmo, bert_mode=bert_mode, bert_dim=bert_dim).to(device)
     elif model_mode == 'LVeGTreeLSTM':
         network = LVeGTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                                args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
@@ -257,33 +264,29 @@ def main():
                                p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn,
                                device=device, comp=args.lveg_comp, g_dim=args.gaussian_dim,
                                pred_dense_layer=pred_dense_layer, attention=attention,
-                               coattention_dim=coattention_dim, elmo=elmo, elmo_weight=elmo_weight,
-                               elmo_config=elmo_config, bert_mode=bert_mode, bert_dim=bert_dim).to(device)
+                               coattention_dim=coattention_dim, elmo_mode=elmo, bert_mode=bert_mode, bert_dim=bert_dim).to(device)
     elif model_mode == 'LVeGBiTreeLSTM':
         network = LVeGBiTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                                  args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
                                  args.num_labels, embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
                                  p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn,
                                  device=device, comp=args.lveg_comp, g_dim=args.gaussian_dim, attention=attention,
-                                 pred_dense_layer=pred_dense_layer, coattention_dim=coattention_dim, elmo=elmo,
-                                 elmo_weight=elmo_weight, elmo_config=elmo_config, bert_mode=bert_mode,
-                                 bert_dim=bert_dim).to(device)
+                                 pred_dense_layer=pred_dense_layer, coattention_dim=coattention_dim, elmo_mode=elmo,
+                                 bert_mode=bert_mode, bert_dim=bert_dim).to(device)
     elif model_mode == 'BiCRFBiTreeLSTM':
         network = BiCRFBiTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                                   args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
                                   args.num_labels, embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
                                   p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn,
                                   device=device, pred_dense_layer=pred_dense_layer, attention=attention,
-                                  coattention_dim=coattention_dim, elmo=elmo, elmo_weight=elmo_weight,
-                                  elmo_config=elmo_config, bert_mode=bert_mode, bert_dim=bert_dim).to(device)
+                                  coattention_dim=coattention_dim, elmo_mode=elmo, bert_mode=bert_mode, bert_dim=bert_dim).to(device)
     elif model_mode == 'BiCRFTreeLSTM':
         network = BiCRFTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                                 args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
                                 args.num_labels, embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
                                 p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn,
                                 device=device, pred_dense_layer=pred_dense_layer, attention=attention,
-                                coattention_dim=coattention_dim, elmo=elmo, elmo_weight=elmo_weight,
-                                elmo_config=elmo_config, bert_mode=bert_mode, bert_dim=bert_dim).to(device)
+                                coattention_dim=coattention_dim, elmo_mode=elmo, bert_mode=bert_mode, bert_dim=bert_dim).to(device)
     else:
         raise NotImplementedError
 
