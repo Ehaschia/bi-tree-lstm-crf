@@ -51,7 +51,6 @@ class TreeLstm(nn.Module):
             word_dim += bert_dim
         else:
             pass
-
         if tree_mode == 'SLSTM':
             self.bu_rnn_cell = BinarySLSTMCell(tree_input_dim, output_dim, p_tree=p_tree)
             # self.bu_rnn_cell = BinarySLSTMCell_chain(tree_input_dim, output_dim, p_tree=p_tree)
@@ -98,7 +97,7 @@ class TreeLstm(nn.Module):
             self.generate_pred_layer(pred_input_dim, softmax_in_dim, num_labels)
             self.pred = self.avg_h_pred
         elif pred_mode == 'td_avg_h':
-            pred_input_dim = 2*coattention_dim if self.use_attention else output_dim*2
+            pred_input_dim = 2 * coattention_dim if self.use_attention else output_dim * 2
             pred_input_dim = pred_input_dim if self.bert_mode.find('out') == -1 else pred_input_dim + bert_dim
             self.generate_pred_layer(pred_input_dim, softmax_in_dim, num_labels)
             self.pred = self.td_avg_pred
@@ -160,13 +159,8 @@ class TreeLstm(nn.Module):
                 r = {'h': r_h, 'c': r_c}
                 tree.bu_state = self.bu_rnn_cell(l, r, inputs=inputs)
             elif self.tree_mode == 'BUTreeLSTM':
-                inputs = embedding[tree.position_idx]
-                c = inputs.detach().new(self.tree_input_dim).fill_(0.).requires_grad_()
-                if self.rnn is not None:
-                    tree.bu_state = {'x': inputs, 'h': seq_out[tree.position_idx], 'c': c}
-                else:
-                    h = inputs.detach().new(self.tree_input_dim).fill_(0.).requires_grad_()
-                    tree.bu_state = {'x': inputs, 'h': h, 'c': c}
+                inputs = seq_out[tree.position_idx]
+                tree.bu_state = self.bu_rnn_cell(None, None, inputs=inputs)
             else:
                 raise NotImplementedError("the tree model " + self.tree_mode + " is not implemented!")
         else:
@@ -186,7 +180,7 @@ class TreeLstm(nn.Module):
         if self.bert_mode.find('out') != -1:
             bert_phase = tree.bert_phase
             hidden = torch.cat([bert_phase, hidden], dim=1)
-        # alert the hidden is trainable?
+
         hidden = self.dropout_pred(hidden)
         if self.dense_softmax is not None:
             softmax_in = F.relu(self.dense_softmax(hidden))
@@ -238,12 +232,10 @@ class TreeLstm(nn.Module):
         return pred
 
     def forward(self, tree):
-        elmo_word = tree.elmo_embedding
+        elmo_embedding = tree.elmo_embedding
         if self.word_embedding is not None:
             input_word = tree.get_yield()
-            # TODO optimize the input word to gpu here
-            word = self.word_embedding(torch.from_numpy(input_word).to(self.device))
-            embedding_word = self.dropout_in(word)
+            embedding_word = self.word_embedding(torch.from_numpy(input_word).to(self.device))
         else:
             embedding_word = None
 
@@ -251,21 +243,23 @@ class TreeLstm(nn.Module):
             bert_embedding = tree.bert_embedding
         else:
             bert_embedding = None
-        # ugly
-        if embedding_word is not None and elmo_word is not None:
-            word = torch.cat([elmo_word, embedding_word], dim=1)
+
+        if elmo_embedding is not None and embedding_word is not None:
+            word = torch.cat([elmo_embedding, embedding_word], dim=1)
+        elif bert_embedding is not None and embedding_word is not None:
+            word = torch.cat([bert_embedding, embedding_word], dim=1)
+        elif elmo_embedding is not None and embedding_word is None:
+            word = elmo_embedding
+        elif bert_embedding is not None and embedding_word is None:
+            word = bert_embedding
         elif embedding_word is not None:
             word = embedding_word
-        elif elmo_word is not None:
-            word = elmo_word
         else:
-            raise ValueError('Embedding Error!')
-
-        if embedding_word is not None and bert_embedding is not None:
-            word = torch.cat([bert_embedding, embedding_word], dim=1)
+            raise NotImplementedError("Embedding loading Error!")
 
         # sequence part
         word = word.requires_grad_()
+        word = self.dropout_in(word)
         if self.rnn is not None:
             word = word.unsqueeze(dim=0)
             lens = [word.size()[1]]
@@ -283,12 +277,6 @@ class TreeLstm(nn.Module):
         if self.use_attention:
             self.attention(tree)
         return seq_output
-
-    # def loss(self, tree):
-    #     seq_output = self.forward(tree)
-    #     # pred part
-    #     label_distribution = self.softmax(self.pred(tree, seq_output))
-    #     return self.nll_loss(label_distribution, self.target.view(-1).to(self.device)).mean()
 
     def loss(self, tree):
         seq_output = self.forward(tree)
@@ -341,11 +329,11 @@ class BiTreeLstm(TreeLstm):
         else:
             raise ValueError('Elmo error!')
 
-        if bert_mode == 'none':
-            pass
-        elif bert_mode.find('only') != -1:
+        self.bert_mode = bert_mode
+
+        if bert_mode.find('only_in') != -1:
             word_dim = bert_dim
-        elif bert_mode.find('in') != -1:
+        elif bert_mode.find('cat_in') != -1:
             word_dim += bert_dim
         else:
             pass
@@ -357,7 +345,6 @@ class BiTreeLstm(TreeLstm):
             self.attention = CoAttention(output_dim * 6, coattention_dim)
         if pred_mode == 'single_h':
             pred_input_dim = coattention_dim if self.use_attention else 2 * output_dim
-            # fixme here the dimension is fix
             pred_input_dim = pred_input_dim if self.bert_mode.find('out') == -1 else pred_input_dim + bert_dim
             self.generate_pred_layer(pred_input_dim, softmax_in_dim, num_labels)
             self.pred = self.single_h_pred
@@ -367,7 +354,7 @@ class BiTreeLstm(TreeLstm):
             self.generate_pred_layer(pred_input_dim, softmax_in_dim, num_labels)
             self.pred = self.avg_h_pred
         elif pred_mode == 'td_avg_h':
-            pred_input_dim = 2*coattention_dim if self.use_attention else 3 * output_dim
+            pred_input_dim = 2 * coattention_dim if self.use_attention else 3 * output_dim
             pred_input_dim = pred_input_dim if self.bert_mode.find('out') == -1 else pred_input_dim + bert_dim
             self.generate_pred_layer(pred_input_dim, softmax_in_dim, num_labels)
             self.pred = self.td_avg_pred
@@ -384,10 +371,7 @@ class BiTreeLstm(TreeLstm):
             self.recursive_tree(tree.children[idx], seq_out, embedding)
 
         if tree.is_leaf():
-            if self.rnn is not None:
-                inputs = seq_out[tree.position_idx]
-            else:
-                inputs = embedding[tree.position_idx]
+            inputs = seq_out[tree.position_idx]
             tree.bu_state = self.bu_rnn_cell(None, None, inputs)
             # c = inputs.detach().new(self.tree_input_dim).fill_(0.).requires_grad_()
             # if self.rnn is not None:
@@ -526,7 +510,8 @@ class CRFBiTreeLstm(BiTreeLstm):
     def __init__(self, tree_mode, seq_mode, pred_mode, word_dim, num_words, tree_input_dim, output_dim,
                  softmax_in_dim, seq_layer_num, num_labels, embedd_word=None, embedd_trainable=True,
                  p_in=0.5, p_leaf=0.5, p_tree=0.5, p_pred=0.5, leaf_rnn=False, bi_leaf_rnn=False, device=None,
-                 pred_dense_layer=False, attention=False, coattention_dim=150, elmo_mode='none', bert_mode='none', bert_dim=0):
+                 pred_dense_layer=False, attention=False, coattention_dim=150, elmo_mode='none', bert_mode='none',
+                 bert_dim=0):
         super(CRFBiTreeLstm, self).__init__(tree_mode, seq_mode, pred_mode, word_dim, num_words, tree_input_dim,
                                             output_dim, softmax_in_dim, seq_layer_num, num_labels,
                                             embedd_word=embedd_word, embedd_trainable=embedd_trainable, p_in=p_in,
@@ -573,7 +558,8 @@ class LVeGBiTreeLstm(BiTreeLstm):
     def __init__(self, tree_mode, seq_mode, pred_mode, word_dim, num_words, tree_input_dim, output_dim,
                  softmax_in_dim, seq_layer_num, num_labels, embedd_word=None, embedd_trainable=True, comp=1, g_dim=1,
                  p_in=0.5, p_leaf=0.5, p_tree=0.5, p_pred=0.5, leaf_rnn=False, bi_leaf_rnn=False, device=None,
-                 pred_dense_layer=False, attention=False, coattention_dim=150, elmo_mode='none', bert_mode='none', bert_dim=0):
+                 pred_dense_layer=False, attention=False, coattention_dim=150, elmo_mode='none', bert_mode='none',
+                 bert_dim=0):
         super(LVeGBiTreeLstm, self).__init__(tree_mode, seq_mode, pred_mode, word_dim, num_words, tree_input_dim,
                                              output_dim, softmax_in_dim, seq_layer_num, num_labels,
                                              embedd_word=embedd_word, embedd_trainable=embedd_trainable, p_in=p_in,
@@ -676,7 +662,8 @@ class BiCRFBiTreeLstm(BiTreeLstm):
     def __init__(self, tree_mode, seq_mode, pred_mode, word_dim, num_words, tree_input_dim, output_dim,
                  softmax_in_dim, seq_layer_num, num_labels, embedd_word=None, embedd_trainable=True,
                  p_in=0.5, p_leaf=0.5, p_tree=0.5, p_pred=0.5, leaf_rnn=False, bi_leaf_rnn=False, device=None,
-                 pred_dense_layer=False, attention=False, coattention_dim=150, elmo_mode='none', bert_mode='none', bert_dim=0):
+                 pred_dense_layer=False, attention=False, coattention_dim=150, elmo_mode='none', bert_mode='none',
+                 bert_dim=0):
         super(BiCRFBiTreeLstm, self).__init__(tree_mode, seq_mode, pred_mode, word_dim, num_words, tree_input_dim,
                                               output_dim, softmax_in_dim, seq_layer_num, num_labels,
                                               embedd_word=embedd_word, embedd_trainable=embedd_trainable, p_in=p_in,
@@ -725,7 +712,8 @@ class BiCRFTreeLstm(TreeLstm):
     def __init__(self, tree_mode, seq_mode, pred_mode, word_dim, num_words, tree_input_dim, output_dim,
                  softmax_in_dim, seq_layer_num, num_labels, embedd_word=None, embedd_trainable=True,
                  p_in=0.5, p_leaf=0.5, p_tree=0.5, p_pred=0.5, leaf_rnn=False, bi_leaf_rnn=False, device=None,
-                 pred_dense_layer=False, attention=False, coattention_dim=150, elmo_mode='none', bert_mode='none', bert_dim=0):
+                 pred_dense_layer=False, attention=False, coattention_dim=150, elmo_mode='none', bert_mode='none',
+                 bert_dim=0):
         super(BiCRFTreeLstm, self).__init__(tree_mode, seq_mode, pred_mode, word_dim, num_words, tree_input_dim,
                                             output_dim, softmax_in_dim, seq_layer_num, num_labels,
                                             embedd_word=embedd_word, embedd_trainable=embedd_trainable, p_in=p_in,

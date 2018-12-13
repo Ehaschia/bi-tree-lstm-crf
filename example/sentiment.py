@@ -184,16 +184,14 @@ def main():
         test_dataset.replace_unk(word_alphabet, embedd_dict, isTraining=False)
     logger.info("Word Alphabet Size: %d" % word_alphabet.size())
     word_table = None
-    if elmo is 'only':
+    word_alphabet.close()
+
+    # loading word embedding or not
+    if bert_mode.find('only') != -1 or elmo == 'only':
         pass
     else:
         word_table = construct_word_embedding_table()
 
-    if bert_mode is 'only-in' or 'only-in-both' or word_table is not None:
-        pass
-    else:
-        word_table = construct_word_embedding_table()
-    word_alphabet.close()
     embedd_dict = None
 
     # alert here we load elmo and preprocess tree for elmo
@@ -339,7 +337,7 @@ def main():
                  bin_phase_v2_acc, full_bin_phase_v2_acc, bin_sents_v2_acc))
 
     for epoch in range(1, args.epoch + 1):
-        train_dataset.shuffle()
+        # train_dataset.shuffle()
 
         print('Epoch %d (optim_method=%s, learning rate=%.4f, decay rate=%.4f (schedule=%d)): ' % (
             epoch, optim_method, lr, decay_rate, schedule))
@@ -355,7 +353,7 @@ def main():
             tree = train_dataset[i]
             forest.append(tree)
             loss = network.loss(tree)
-            a_tree_p_cnt = 2 * tree.length + 1
+            a_tree_p_cnt = 2 * tree.length - 1
             loss.backward()
 
             train_err += loss.item()
@@ -451,8 +449,7 @@ def main():
                                      'full_bin_phase_v2': 0.0}
                 best_epoch[key] = epoch
             test_total = {'fine_phase': 0.0, 'fine_sents': float(len(test_dataset)), 'bin_phase': 0.0, 'bin_sents': 0.0,
-                          'bin_phase_v2': 0.0, 'bin_sents_v2': 0.0, 'full_bin_phase': 0.0,
-                          'full_bin_phase_v2': 0.0}
+                          'bin_phase_v2': 0.0, 'bin_sents_v2': 0.0, 'full_bin_phase': 0.0, 'full_bin_phase_v2': 0.0}
 
             time.sleep(1)
 

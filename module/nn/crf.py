@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 from torch.nn.parameter import Parameter
-import numpy as np
 import torch.nn.functional as F
 from module.util import logsumexp
 
@@ -37,7 +36,6 @@ class TreeCRF(nn.Module):
         self.pred_mode = pred_mode
         self.bert_dim = bert_dim
         if pred_mode == 'single_h':
-            # test
             pred_input_dim = input_size if self.only_bu else 2 * input_size
             pred_input_dim = pred_input_dim + bert_dim
             self.generate_pred_layer(pred_input_dim , softmax_in_dim, num_labels)

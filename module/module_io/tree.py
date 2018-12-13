@@ -15,12 +15,14 @@ class Tree(object):
         self.height = 0
         self.position_idx = 0
         self.str_span = None
+        self.str_word = str_word
+        # cache when training
         self.bu_state = {}
         self.td_state = {}
-        self.str_word = str_word
         self.crf_cache = {}
         self.lveg_cache = {}
         self.attention_cache = {}
+        # pre-processing part
         self.bert_embedding = None
         self.bert_phase = None
         self.elmo_embedding = None
@@ -184,6 +186,7 @@ class Tree(object):
         self.td_state = {}
         self.crf_cache = {}
         self.lveg_cache = {}
+        self.attention_cache = {}
 
     def replace_unk(self, word_alphabet, embedding, isTraining=True):
         for child in self.children:
