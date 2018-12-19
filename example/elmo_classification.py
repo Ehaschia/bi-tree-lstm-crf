@@ -14,31 +14,33 @@ from allennlp.training import Trainer
 from allennlp.data.token_indexers import ELMoTokenCharactersIndexer, SingleIdTokenIndexer
 
 import torch.nn as nn
+root_path = '/home/ehaschia/Code/dataset/'
+save_dir = '/home/ehaschia/Code/bi-tree-lstm-crf'
 token_indexers = {'tokens': SingleIdTokenIndexer(),
                   'elmo': ELMoTokenCharactersIndexer()}
 
 train_reader = StanfordSentimentTreeBankDatasetReader(token_indexers=token_indexers, use_subtrees=False)
 dev_reader = StanfordSentimentTreeBankDatasetReader(token_indexers=token_indexers, use_subtrees=False)
 
-train_dataset = train_reader.read('/home/ehaschia/Code/dataset/sst/trees/train.txt')
-dev_dataset = dev_reader.read('/home/ehaschia/Code/dataset/sst/trees/dev.txt')
-test_dataset = dev_reader.read('/home/ehaschia/Code/dataset/sst/trees/test.txt')
+train_dataset = train_reader.read(root_path + '/sst/trees/train.txt')
+dev_dataset = dev_reader.read(root_path + '/sst/trees/dev.txt')
+test_dataset = dev_reader.read(root_path + '/sst/trees/test.txt')
 
 # You can optionally specify the minimum count of tokens/labels.
 # `min_count={'tokens':3}` here means that any tokens that appear less than three times
 # will be ignored and not included in the vocabulary.
-vocab = Vocabulary.from_instances(train_dataset + dev_dataset + test_dataset,
+vocab = Vocabulary.from_instances(train_dataset + dev_dataset,
                                   min_count={'tokens': 3})
 
 params = Params({'embedding_dim': 300,
-                 'pretrained_file': '/home/ehaschia/Code/for_liwen_zhang/data/glove.sentiment.large.pretrained.vec',
+                 'pretrained_file': root_path + '/glove.840B.300d.txt',
                  'trainable': False})
 
 embedding = Embedding.from_params(vocab, params)
 embedder = BasicTextFieldEmbedder({'tokens': embedding})
 
-options_file = "/home/ehaschia/Code/dataset/elmo/elmo_2x4096_512_2048cnn_2xhighway_options.json"
-weight_file = "/home/ehaschia/Code/dataset/elmo/elmo_2x4096_512_2048cnn_2xhighway_weights.hdf5"
+options_file = root_path + "/elmo/elmo_2x4096_512_2048cnn_2xhighway_options.json"
+weight_file = root_path + "/elmo/elmo_2x4096_512_2048cnn_2xhighway_weights.hdf5"
 use_cuda = torch.cuda.is_available()
 device = torch.device("cuda" if use_cuda else "cpu")
 elmo = Elmo(options_file, weight_file, num_output_representations=1, dropout=0).to(device)
@@ -69,5 +71,5 @@ trainer = Trainer(model=model,
                   num_epochs=20,
                   grad_norm=5,
                   validation_metric='+accuracy',
-                  cuda_device=0)
-trainer.train()
+                  cuda_device=0,
+                  serialization_dir=save_dir)
