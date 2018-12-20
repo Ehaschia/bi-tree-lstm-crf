@@ -12,10 +12,14 @@ import torch.optim as optim
 from allennlp.data.iterators import BucketIterator
 from allennlp.training import Trainer
 from allennlp.data.token_indexers import ELMoTokenCharactersIndexer, SingleIdTokenIndexer
+from allennlp.models.archival import *
+from allennlp.common.util import prepare_environment
+from allennlp.commands.evaluate import evaluate
 
 import torch.nn as nn
 root_path = '/home/ehaschia/Code/dataset/'
 save_dir = '/home/ehaschia/Code/bi-tree-lstm-crf'
+cuda_id = 0
 token_indexers = {'tokens': SingleIdTokenIndexer(),
                   'elmo': ELMoTokenCharactersIndexer()}
 
@@ -71,5 +75,9 @@ trainer = Trainer(model=model,
                   num_epochs=20,
                   grad_norm=5,
                   validation_metric='+accuracy',
-                  cuda_device=0,
+                  cuda_device=cuda_id,
                   serialization_dir=save_dir)
+
+trainer.train()
+print('*'*20 + ' EVALUATE with Best Epoch ' + "*"*20)
+evaluate(model, test_dataset, iterator, cuda_id)
