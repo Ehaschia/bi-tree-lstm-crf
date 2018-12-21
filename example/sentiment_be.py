@@ -114,13 +114,12 @@ def main():
     allen_dev_dataset = dev_reader.read(args.dev)
     allen_test_dataset = dev_reader.read(args.test)
     allen_vocab = Vocabulary.from_instances(allen_train_dataset + allen_dev_dataset + allen_test_dataset,
-                                            min_count={'tokens': 3})
+                                            min_count={'tokens': 1})
 
     # Build Embddering Layer
     if embedd_mode != 'random':
         params = Params({'embedding_dim': 300,
                          'pretrained_file': args.embedding_path,
-                         # TODO parameter?
                          'trainable': False})
 
         embedding = Embedding.from_params(allen_vocab, params)
@@ -224,8 +223,7 @@ def main():
                  bin_phase_v2_acc, full_bin_phase_v2_acc, bin_sents_v2_acc))
 
     for epoch in range(1, args.epoch + 1):
-        # train_dataset.shuffle()
-
+        train_dataset.shuffle()
         print('Epoch %d (optim_method=%s, learning rate=%.4f, decay rate=%.4f (schedule=%d)): ' % (
             epoch, optim_method, lr, decay_rate, schedule))
         time.sleep(1)
@@ -239,7 +237,8 @@ def main():
         for i in tqdm(range(len(train_dataset))):
             tree = train_dataset[i]
             forest.append(tree)
-            loss = network.loss(tree)
+            output_dict = network.loss(tree)
+            loss = output_dict['loss']
             a_tree_p_cnt = 2 * tree.length - 1
             loss.backward()
 
@@ -274,27 +273,30 @@ def main():
                            'bin_phase_v2': 0.0, 'bin_sents_v2': 0.0, 'full_bin_phase': 0.0, 'full_bin_phase_v2': 0.0}
         for i in tqdm(range(len(dev_dataset))):
             tree = dev_dataset[i]
-            p_corr, preds, bin_corr, bin_preds, bin_mask = network.predict(tree)
+            output_dict = network.predict(tree)
+            p_corr, preds, bin_corr, bin_preds, bin_mask = output_dict['corr'], output_dict['label'], \
+                                                           output_dict['binary_corr'], output_dict['binary_pred'], \
+                                                           output_dict['binary_mask']
 
-            dev_tot['fine_phase'] += preds.size()[0]
+            dev_tot['fine_phase'] += preds.size
 
-            dev_corr['fine_phase'] += p_corr.sum().item()
-            dev_corr['fine_sents'] += p_corr[-1].item()
-            dev_corr['full_bin_phase'] += bin_corr[0].sum().item()
+            dev_corr['fine_phase'] += p_corr.sum()
+            dev_corr['fine_sents'] += p_corr[-1]
+            dev_corr['full_bin_phase'] += bin_corr[0].sum()
 
             if len(bin_corr) == 2:
-                dev_corr['full_bin_phase_v2'] += bin_corr[1].sum().item()
+                dev_corr['full_bin_phase_v2'] += bin_corr[1]
             else:
                 dev_corr['full_bin_phase_v2'] = dev_corr['full_bin_phase']
-            dev_tot['full_bin_phase'] += bin_mask.sum().item()
+            dev_tot['full_bin_phase'] += bin_mask.sum()
 
             if tree.label != 2:
-                dev_corr['bin_phase'] += bin_corr[0].sum().item()
-                dev_tot['bin_phase'] += bin_mask.sum().item()
-                dev_corr['bin_sents'] += bin_corr[0][-1].item()
+                dev_corr['bin_phase'] += bin_corr[0].sum()
+                dev_tot['bin_phase'] += bin_mask.sum()
+                dev_corr['bin_sents'] += bin_corr[0][-1]
                 if len(bin_corr) == 2:
-                    dev_corr['bin_phase_v2'] += bin_corr[1].sum().item()
-                    dev_corr['bin_sents_v2'] += bin_corr[1][-1].item()
+                    dev_corr['bin_phase_v2'] += bin_corr[1].sum()
+                    dev_corr['bin_sents_v2'] += bin_corr[1][-1]
                 else:
                     dev_corr['bin_phase_v2'] = dev_corr['bin_phase']
                     dev_corr['bin_sents_v2'] = dev_corr['bin_sents']
@@ -342,32 +344,34 @@ def main():
 
             for i in tqdm(range(len(test_dataset))):
                 tree = test_dataset[i]
-                p_corr, preds, bin_corr, bin_preds, bin_mask = network.predict(tree)
-
+                output_dict = network.predict(tree)
+                p_corr, preds, bin_corr, bin_preds, bin_mask = output_dict['corr'], output_dict['label'], \
+                                                               output_dict['binary_corr'], output_dict['binary_pred'], \
+                                                               output_dict['binary_mask']
                 # count total number
-                test_total['fine_phase'] += preds.size()[0]
-                test_total['full_bin_phase'] += bin_mask.sum().item()
+                test_total['fine_phase'] += preds.size
+                test_total['full_bin_phase'] += bin_mask.sum()
                 if tree.label != 2:
-                    test_total['bin_phase'] += bin_mask.sum().item()
+                    test_total['bin_phase'] += bin_mask.sum()
                     test_total['bin_sents'] += 1.0
 
                 for key in update:
-                    test_correct[key]['fine_phase'] += p_corr.sum().item()
-                    test_correct[key]['fine_sents'] += p_corr[-1].item()
-                    test_correct[key]['full_bin_phase'] += bin_corr[0].sum().item()
+                    test_correct[key]['fine_phase'] += p_corr.sum()
+                    test_correct[key]['fine_sents'] += p_corr[-1]
+                    test_correct[key]['full_bin_phase'] += bin_corr[0].sum()
 
                     if len(bin_corr) == 2:
-                        test_correct[key]['full_bin_phase_v2'] += bin_corr[1].sum().item()
+                        test_correct[key]['full_bin_phase_v2'] += bin_corr[1].sum()
                     else:
                         test_correct[key]['full_bin_phase_v2'] = test_correct[key]['full_bin_phase']
 
                     if tree.label != 2:
-                        test_correct[key]['bin_phase'] += bin_corr[0].sum().item()
-                        test_correct[key]['bin_sents'] += bin_corr[0][-1].item()
+                        test_correct[key]['bin_phase'] += bin_corr[0].sum()
+                        test_correct[key]['bin_sents'] += bin_corr[0][-1]
 
                         if len(bin_corr) == 2:
-                            test_correct[key]['bin_phase_v2'] += bin_corr[1].sum().item()
-                            test_correct[key]['bin_sents_v2'] += bin_corr[1][-1].item()
+                            test_correct[key]['bin_phase_v2'] += bin_corr[1].sum()
+                            test_correct[key]['bin_sents_v2'] += bin_corr[1][-1]
                         else:
                             test_correct[key]['bin_phase_v2'] = test_correct[key]['bin_phase']
                             test_correct[key]['bin_sents_v2'] = test_correct[key]['bin_sents']

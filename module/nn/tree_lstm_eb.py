@@ -16,18 +16,19 @@ from allennlp.data.dataset import Batch
 from allennlp.training.metrics import CategoricalAccuracy
 from allennlp.nn.util import move_to_device
 
-SORTING_KEYS=[("tokens", "num_tokens")]
+SORTING_KEYS = [("tokens", "num_tokens")]
+
 
 def sort_by_padding(instances: List[Instance],
                     sorting_keys: List[Tuple[str, str]],  # pylint: disable=invalid-sequence-index
-                    vocab: Vocabulary) -> List[Instance]:
+                    vocab: Vocabulary) -> Tuple[List[int], List[Instance]]:
     """
     Sorts the instances by their padding lengths, using the keys in
     ``sorting_keys`` (in the order in which they are provided).  ``sorting_keys`` is a list of
     ``(field_name, padding_key)`` tuples.
     """
     instances_with_lengths = []
-    for instance in instances:
+    for idx, instance in enumerate(instances):
         # Make sure instance is indexed before calling .get_padding
         instance.index_fields(vocab)
         padding_lengths = cast(Dict[str, Dict[str, float]], instance.get_padding_lengths())
@@ -38,11 +39,12 @@ def sort_by_padding(instances: List[Instance],
         #     padding_lengths = noisy_lengths
         instance_with_lengths = ([padding_lengths[field_name][padding_key]
                                   for (field_name, padding_key) in sorting_keys],
-                                 instance)
+                                 instance, idx)
         instances_with_lengths.append(instance_with_lengths)
     instances_with_lengths.sort(key=lambda x: x[0])
 
-    return [instance_with_lengths[-1] for instance_with_lengths in instances_with_lengths]
+    return [instance_with_lengths[-1] for instance_with_lengths in instances_with_lengths], \
+           [instance_with_lengths[-2] for instance_with_lengths in instances_with_lengths]
 
 
 class Biattentive(nn.Module):
@@ -78,7 +80,7 @@ class Biattentive(nn.Module):
         self.nll_loss = nn.CrossEntropyLoss()
         self.device = device
 
-        self.metrics = {"accuracy": CategoricalAccuracy(),}
+        self.metrics = {"accuracy": CategoricalAccuracy(), }
 
     def text_to_instance(self, tokens: List[str], sentiment: str = None) -> Instance:  # type: ignore
         """
@@ -139,14 +141,18 @@ class Biattentive(nn.Module):
         self.collect_phase(tree, str_phase_holder)
         # tokenize and elmo tokenize
         instances = [self.text_to_instance(phase) for phase in str_phase_holder]
-        # fixme debug here, should have method to re-sort back
-        instances = sort_by_padding(instances, [("tokens", "num_tokens")], self.vocab)
+        idx, instances = sort_by_padding(instances, [("tokens", "num_tokens")], self.vocab)
         batch = Batch(instances)
         pad_lengths = batch.get_padding_lengths()
         tensor_dict = batch.as_tensor_dict(pad_lengths)
-        # fixme hard code should fix
         tensor_dict = move_to_device(tensor_dict, 0)
         output = self.biattentive_cell(**tensor_dict)
+        # resort output result
+        new_idx = [i for i in range(len(instances))]
+        for pos, name in enumerate(idx):
+            new_idx[name] = pos
+        for name, tensor in output.items():
+            output[name] = torch.stack([tensor[i] for i in new_idx])
         if label is not None:
             loss = self.nll_loss(output['logits'], label)
             for metric in self.metrics.values():
@@ -164,8 +170,26 @@ class Biattentive(nn.Module):
     def predict(self, tree):
         output_dict = self.forward(tree)
         predictions = output_dict['class_probabilities'].cpu().data.numpy()
-        argmax_indices = np.argmax(predictions, axis=-1)
-        labels = [self.vocab.get_token_from_index(x, namespace="labels")
-                  for x in argmax_indices]
-        output_dict['label'] = labels
+        labels = np.argmax(predictions, axis=-1)
+        # labels = [int(self.vocab.get_token_from_index(x, namespace="labels"))
+        #           for x in argmax_indices]
+
+        output_dict['label'] = np.array(labels)
+
+        label_holder = []
+        tree.collect_golden_labels(label_holder)
+        golden_label = np.array(label_holder)
+        # fine gain target
+        corr = np.equal(labels, golden_label).astype(float)
+
+        # binary target
+        binary_mask = np.not_equal(golden_label, 2).astype(int)
+        binary_preds = ((predictions[:, 3] + predictions[:, 4]) > (predictions[:, 1] + predictions[:, 2])).astype(int)
+        binary_lables = np.greater(labels, 2).astype(int)
+        binary_corr = (np.equal(binary_preds, binary_lables) * binary_mask).astype(float)
+
+        output_dict['corr'] = corr
+        output_dict['binary_mask'] = binary_mask
+        output_dict['binary_corr'] = [binary_corr]
+        output_dict['binary_pred'] = binary_preds
         return output_dict
