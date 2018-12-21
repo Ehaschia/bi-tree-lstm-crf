@@ -146,7 +146,7 @@ class BinaryTreeCRF(nn.Module):
         children_score = []
         for child in tree.children:
             children_score.append(self.forward(child))
-        emission_score = tree.crf_cache['crf_hidden']
+        emission_score = tree.crf_cache['be_hidden']
         if tree.is_leaf():
             return emission_score
         else:
@@ -164,7 +164,7 @@ class BinaryTreeCRF(nn.Module):
         for child in tree.children:
             golden_score += self.golden_score(child)
 
-        emission_score = tree.crf_cache['crf_hidden'][tree.label]
+        emission_score = tree.crf_cache['be_hidden'][tree.label]
 
         if tree.is_leaf():
             return emission_score
@@ -183,7 +183,7 @@ class BinaryTreeCRF(nn.Module):
     def viterbi_forward(self, tree):
         for child in tree.children:
             self.viterbi_forward(child)
-        emission_score = tree.crf_cache['crf_hidden']
+        emission_score = tree.crf_cache['be_hidden']
         if tree.is_leaf():
             tree.crf_cache['max_score'] = emission_score
         else:

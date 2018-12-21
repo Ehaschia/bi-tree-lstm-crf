@@ -15,6 +15,7 @@ from allennlp.modules import Elmo, TextFieldEmbedder
 from allennlp.data.dataset import Batch
 from allennlp.training.metrics import CategoricalAccuracy
 from allennlp.nn.util import move_to_device
+from .crf_be import *
 
 SORTING_KEYS = [("tokens", "num_tokens")]
 
@@ -47,6 +48,13 @@ def sort_by_padding(instances: List[Instance],
            [instance_with_lengths[-2] for instance_with_lengths in instances_with_lengths]
 
 
+def set_logits_back(tree: Tree, tensor: torch.Tensor, idx: List):
+    for child in tree.children:
+        set_logits_back(child, tensor, idx)
+    tree.crf_cache['be_hidden'] = tensor[idx[0]]
+    del idx[0]
+
+
 class Biattentive(nn.Module):
 
     def __init__(self, vocab: Vocabulary,
@@ -66,7 +74,7 @@ class Biattentive(nn.Module):
                  elmo: Elmo,
                  # fixme the class of token_indexer
                  token_indexer,
-                 device):
+                 device) -> None:
         super(Biattentive, self).__init__()
         self.token_indexers = token_indexer
         self.vocab = vocab
@@ -191,5 +199,143 @@ class Biattentive(nn.Module):
         output_dict['corr'] = corr
         output_dict['binary_mask'] = binary_mask
         output_dict['binary_corr'] = [binary_corr]
-        output_dict['binary_pred'] = binary_preds
+        output_dict['binary_pred'] = [binary_preds]
+        return output_dict
+
+
+class CRFBiattentive(Biattentive):
+    def __init__(self, vocab: Vocabulary,
+                 embedder: TextFieldEmbedder,
+                 embedding_dropout_prob: float,
+                 word_dim: int,
+                 use_input_elmo: bool,
+                 pre_encode_dim: Union[int, List[int]],
+                 pre_encode_layer_dropout_prob: Union[float, List[float]],
+                 encode_output_dim: int,
+                 integrtator_output_dim: int,
+                 integrtator_dropout: float,
+                 use_integrator_output_elmo: bool,
+                 output_dim: Union[int, List[int]],
+                 output_pool_size: int,
+                 output_dropout: Union[float, List[float]],
+                 elmo: Elmo,
+                 # fixme the class of token_indexer
+                 token_indexer,
+                 device) -> None:
+        super(CRFBiattentive, self).__init__(vocab, embedder, embedding_dropout_prob, word_dim,
+                                             use_input_elmo, pre_encode_dim, pre_encode_layer_dropout_prob,
+                                             encode_output_dim, integrtator_output_dim, integrtator_dropout,
+                                             use_integrator_output_elmo, output_dim, output_pool_size,
+                                             output_dropout, elmo, token_indexer, device)
+        if isinstance(output_dim, List):
+            self.crf = TreeCRF(output_dim[-1])
+        else:
+            self.crf = TreeCRF(output_dim)
+
+    def loss(self, tree):
+        label_holder = []
+        tree.collect_golden_labels(label_holder)
+        idx_list = [i for i in range(len(label_holder))]
+        label_holder = torch.tensor(label_holder).to(self.device)
+        output = self.forward(tree, label=label_holder)
+        set_logits_back(tree, output['logits'], idx_list)
+        loss = self.crf.loss(tree)
+        output['loss'] = loss
+
+        return output
+
+    def predict(self, tree):
+        label_holder = []
+        tree.collect_golden_labels(label_holder)
+        golden_label = np.array(label_holder)
+        idx_list = [i for i in range(len(label_holder))]
+        output_dict = self.forward(tree)
+        set_logits_back(tree, output_dict['logits'], idx_list)
+        labels = np.array(self.crf.predict(tree))
+
+        output_dict['label'] = labels
+        # fine gain target
+        corr = np.equal(labels, golden_label).astype(float)
+
+        # binary target
+        binary_mask = np.not_equal(golden_label, 2).astype(int)
+        binary_preds_1 = np.greater(labels, 2)
+        binary_preds_2 = np.greater_equal(labels, 2)
+        binary_lables = np.greater(golden_label, 2)
+        binary_corr_1 = (np.equal(binary_preds_1, binary_lables) * binary_mask).astype(float)
+        binary_corr_2 = (np.equal(binary_preds_2, binary_lables) * binary_mask).astype(float)
+
+        output_dict['corr'] = corr
+        output_dict['binary_mask'] = binary_mask
+        output_dict['binary_corr'] = [binary_corr_1, binary_corr_2]
+        output_dict['binary_pred'] = [binary_preds_1, binary_preds_2]
+        return output_dict
+
+
+class BiCRFBiattentive(Biattentive):
+    def __init__(self, vocab: Vocabulary,
+                 embedder: TextFieldEmbedder,
+                 embedding_dropout_prob: float,
+                 word_dim: int,
+                 use_input_elmo: bool,
+                 pre_encode_dim: Union[int, List[int]],
+                 pre_encode_layer_dropout_prob: Union[float, List[float]],
+                 encode_output_dim: int,
+                 integrtator_output_dim: int,
+                 integrtator_dropout: float,
+                 use_integrator_output_elmo: bool,
+                 output_dim: Union[int, List[int]],
+                 output_pool_size: int,
+                 output_dropout: Union[float, List[float]],
+                 elmo: Elmo,
+                 # fixme the class of token_indexer
+                 token_indexer,
+                 device) -> None:
+        super(BiCRFBiattentive, self).__init__(vocab, embedder, embedding_dropout_prob, word_dim,
+                                               use_input_elmo, pre_encode_dim, pre_encode_layer_dropout_prob,
+                                               encode_output_dim, integrtator_output_dim, integrtator_dropout,
+                                               use_integrator_output_elmo, output_dim, output_pool_size,
+                                               output_dropout, elmo, token_indexer, device)
+        if isinstance(output_dim, List):
+            self.crf = BinaryTreeCRF(output_dim[-1])
+        else:
+            self.crf = BinaryTreeCRF(output_dim)
+
+    def loss(self, tree):
+        label_holder = []
+        tree.collect_golden_labels(label_holder)
+        idx_list = [i for i in range(len(label_holder))]
+        label_holder = torch.tensor(label_holder).to(self.device)
+        output = self.forward(tree, label=label_holder)
+        set_logits_back(tree, output['logits'], idx_list)
+        loss = self.crf.loss(tree)
+        output['loss'] = loss
+
+        return output
+
+    def predict(self, tree):
+        label_holder = []
+        tree.collect_golden_labels(label_holder)
+        golden_label = np.array(label_holder)
+        idx_list = [i for i in range(len(label_holder))]
+        output_dict = self.forward(tree)
+        set_logits_back(tree, output_dict['logits'], idx_list)
+        labels = np.array(self.crf.predict(tree))
+
+        output_dict['label'] = labels
+        # fine gain target
+        corr = np.equal(labels, golden_label).astype(float)
+
+        # binary target
+        binary_mask = np.not_equal(golden_label, 2).astype(int)
+        binary_preds_1 = np.greater(labels, 2)
+        binary_preds_2 = np.greater_equal(labels, 2)
+        binary_lables = np.greater(golden_label, 2)
+        binary_corr_1 = (np.equal(binary_preds_1, binary_lables) * binary_mask).astype(float)
+        binary_corr_2 = (np.equal(binary_preds_2, binary_lables) * binary_mask).astype(float)
+
+        output_dict['corr'] = corr
+        output_dict['binary_mask'] = binary_mask
+        output_dict['binary_corr'] = [binary_corr_1, binary_corr_2]
+        output_dict['binary_pred'] = [binary_preds_1, binary_preds_2]
         return output_dict

@@ -160,19 +160,42 @@ def main():
         bert.eval()
     logger.info("constructing network...")
 
+    pre_encode_dim = [int(dim) for dim in args.elmo_preencoder_dim.split(',')]
+    pre_encode_layer_dropout_prob = [float(prob) for prob in args.elmo_preencoder_p.split(',')]
+    output_dim = [int(dim) for dim in args.elmo_output_dim.split(',')]
+    output_dropout = [float(prob) for prob in args.elmo_output_p.split(',')]
+
     if model_mode == 'elmo':
-        #fixme ugly word dim
-        pre_encode_dim = [int(dim) for dim in args.elmo_preencoder_dim.split(',')]
-        pre_encode_layer_dropout_prob = [float(prob) for prob in args.elmo_preencoder_p.split(',')]
-        output_dim = [int(dim) for dim in args.elmo_output_dim.split(',')]
-        output_dropout = [float(prob) for prob in args.elmo_output_p.split(',')]
-        network = Biattentive(vocab=allen_vocab,  embedder=embedder, embedding_dropout_prob=args.embedding_p,
+        # fixme ugly word dim
+        network = Biattentive(vocab=allen_vocab, embedder=embedder, embedding_dropout_prob=args.embedding_p,
                               word_dim=300, use_input_elmo=args.elmo_input, pre_encode_dim=pre_encode_dim,
-                              pre_encode_layer_dropout_prob=pre_encode_layer_dropout_prob, encode_output_dim=args.elmo_encoder_dim,
-                              integrtator_output_dim=args.elmo_integrtator_dim, integrtator_dropout= args.elmo_integrtator_p,
+                              pre_encode_layer_dropout_prob=pre_encode_layer_dropout_prob,
+                              encode_output_dim=args.elmo_encoder_dim,
+                              integrtator_output_dim=args.elmo_integrtator_dim,
+                              integrtator_dropout=args.elmo_integrtator_p,
                               use_integrator_output_elmo=args.elmo_output, output_dim=output_dim,
                               output_pool_size=args.elmo_output_pool_size, output_dropout=output_dropout,
                               elmo=elmo_model, token_indexer=token_indexers, device=device).to(device)
+    elif model_mode == 'elmo_crf':
+        network = CRFBiattentive(vocab=allen_vocab, embedder=embedder, embedding_dropout_prob=args.embedding_p,
+                                 word_dim=300, use_input_elmo=args.elmo_input, pre_encode_dim=pre_encode_dim,
+                                 pre_encode_layer_dropout_prob=pre_encode_layer_dropout_prob,
+                                 encode_output_dim=args.elmo_encoder_dim,
+                                 integrtator_output_dim=args.elmo_integrtator_dim,
+                                 integrtator_dropout=args.elmo_integrtator_p,
+                                 use_integrator_output_elmo=args.elmo_output, output_dim=output_dim,
+                                 output_pool_size=args.elmo_output_pool_size, output_dropout=output_dropout,
+                                 elmo=elmo_model, token_indexer=token_indexers, device=device).to(device)
+    elif model_mode == 'elmo_bicrf':
+        network = BiCRFBiattentive(vocab=allen_vocab, embedder=embedder, embedding_dropout_prob=args.embedding_p,
+                                   word_dim=300, use_input_elmo=args.elmo_input, pre_encode_dim=pre_encode_dim,
+                                   pre_encode_layer_dropout_prob=pre_encode_layer_dropout_prob,
+                                   encode_output_dim=args.elmo_encoder_dim,
+                                   integrtator_output_dim=args.elmo_integrtator_dim,
+                                   integrtator_dropout=args.elmo_integrtator_p,
+                                   use_integrator_output_elmo=args.elmo_output, output_dim=output_dim,
+                                   output_pool_size=args.elmo_output_pool_size, output_dropout=output_dropout,
+                                   elmo=elmo_model, token_indexer=token_indexers, device=device).to(device)
     else:
         raise NotImplementedError
 
@@ -285,7 +308,7 @@ def main():
             dev_corr['full_bin_phase'] += bin_corr[0].sum()
 
             if len(bin_corr) == 2:
-                dev_corr['full_bin_phase_v2'] += bin_corr[1]
+                dev_corr['full_bin_phase_v2'] += bin_corr[1].sum()
             else:
                 dev_corr['full_bin_phase_v2'] = dev_corr['full_bin_phase']
             dev_tot['full_bin_phase'] += bin_mask.sum()
