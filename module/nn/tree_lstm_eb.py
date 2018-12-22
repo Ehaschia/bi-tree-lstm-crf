@@ -193,8 +193,8 @@ class Biattentive(nn.Module):
         # binary target
         binary_mask = np.not_equal(golden_label, 2).astype(int)
         binary_preds = ((predictions[:, 3] + predictions[:, 4]) > (predictions[:, 1] + predictions[:, 2])).astype(int)
-        binary_lables = np.greater(labels, 2).astype(int)
-        binary_corr = (np.equal(binary_preds, binary_lables) * binary_mask).astype(float)
+        binary_golden = np.greater(golden_label, 2).astype(int)
+        binary_corr = (np.equal(binary_preds, binary_golden) * binary_mask).astype(float)
 
         output_dict['corr'] = corr
         output_dict['binary_mask'] = binary_mask
