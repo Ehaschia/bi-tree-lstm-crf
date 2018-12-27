@@ -15,7 +15,7 @@ from module.module_io.logger import *
 from module.module_io.sst_data import *
 from module.nn.tree_lstm_eb import *
 from tensorboardX import SummaryWriter
-from pytorch_pretrained_bert import BertModel
+from pytorch_pretrained_bert import BertModel, BertTokenizer
 from allennlp.modules.elmo import Elmo
 from allennlp.data.dataset_readers import StanfordSentimentTreeBankDatasetReader
 from allennlp.data.token_indexers import ELMoTokenCharactersIndexer, SingleIdTokenIndexer
@@ -45,12 +45,11 @@ def main():
     parser.add_argument('--test', type=str, default='/home/ehaschia/Code/dataset/sst/trees/test.txt')
     parser.add_argument('--num_labels', type=int, default=5)
     parser.add_argument('--embedding_p', type=float, default=0.5, help="Dropout prob for embedding")
-    parser.add_argument('--lveg_comp', type=int, default=1, help='the component number of mixture gaussian in LVeG')
+    parser.add_argument('--component_num', type=int, default=1, help='the component number of mixture gaussian in LVeG')
     parser.add_argument('--gaussian_dim', type=int, default=1, help='the gaussian dim in LVeG')
     parser.add_argument('--tensorboard', action='store_true')
     parser.add_argument('--td_name', type=str, default='default', help='the name of this test')
     parser.add_argument('--td_dir', type=str, required=True)
-    parser.add_argument('--elmo', action='store_true')
     parser.add_argument('--elmo_weight', type=str,
                         default='/home/ehaschia/Code/dataset/elmo/elmo_2x4096_512_2048cnn_2xhighway_weights.hdf5')
     parser.add_argument('--elmo_config', type=str,
@@ -65,12 +64,10 @@ def main():
     parser.add_argument('--elmo_output_dim', type=str, default='1200,600,5')
     parser.add_argument('--elmo_output_p', type=str, default='0.2,0.3,0.0')
     parser.add_argument('--elmo_output_pool_size', type=int, default=4)
-    # fixme fix bert here
-    parser.add_argument('--bert', choices=['none', 'only_in', 'cat_in', 'out', 'only_in_out', 'cat_in_out'])
+    parser.add_argument('--bert_pred_dropout', type=float, default=0.1)
     parser.add_argument('--bert_dir', type=str, default='/home/ehaschia/Code/dataset/elmo/')
     parser.add_argument('--bert_model', choices=['bert-base-uncased', 'bert-large-uncased', 'bert-base-cased',
                                                  'bert-large-cased'])
-
     # load tree
     args = parser.parse_args()
     print(args)
@@ -80,11 +77,14 @@ def main():
     embedd_mode = args.embedding
     model_mode = args.model_mode
 
-    elmo = args.elmo
+    elmo = model_mode.find('elmo') != -1
+    bert = model_mode.find('bert') != -1
+
     elmo_weight = args.elmo_weight
     elmo_config = args.elmo_config
 
-    bert_mode = args.bert
+    use_cuda = torch.cuda.is_available()
+    device = torch.device("cuda" if use_cuda else "cpu")
 
     all_cite_version = ['fine_phase', 'fine_sents', 'bin_phase', 'bin_sents',
                         'bin_phase_v2', 'bin_sents_v2', 'full_bin_phase', 'full_bin_phase_v2']
@@ -103,40 +103,59 @@ def main():
         summary_writer.add_scalar(tag=name, scalar_value=value,
                                   global_step=step)
 
+    # ELMO PART
     # allennlp prepare part
     # build Vocabulary
-    token_indexers = {'tokens': SingleIdTokenIndexer(),
-                      'elmo': ELMoTokenCharactersIndexer()}
-    train_reader = StanfordSentimentTreeBankDatasetReader(token_indexers=token_indexers, use_subtrees=False)
-    dev_reader = StanfordSentimentTreeBankDatasetReader(token_indexers=token_indexers, use_subtrees=False)
+    if elmo:
+        elmo_model = Elmo(elmo_config, elmo_weight, 1, requires_grad=False, dropout=0.0).to(device)
+        token_indexers = {'tokens': SingleIdTokenIndexer(),
+                          'elmo': ELMoTokenCharactersIndexer()}
+        train_reader = StanfordSentimentTreeBankDatasetReader(token_indexers=token_indexers, use_subtrees=False)
+        dev_reader = StanfordSentimentTreeBankDatasetReader(token_indexers=token_indexers, use_subtrees=False)
 
-    allen_train_dataset = train_reader.read(args.train)
-    allen_dev_dataset = dev_reader.read(args.dev)
-    allen_test_dataset = dev_reader.read(args.test)
-    allen_vocab = Vocabulary.from_instances(allen_train_dataset + allen_dev_dataset + allen_test_dataset,
-                                            min_count={'tokens': 1})
+        allen_train_dataset = train_reader.read(args.train)
+        allen_dev_dataset = dev_reader.read(args.dev)
+        allen_test_dataset = dev_reader.read(args.test)
+        allen_vocab = Vocabulary.from_instances(allen_train_dataset + allen_dev_dataset + allen_test_dataset,
+                                                min_count={'tokens': 1})
+        # Build Embddering Layer
+        if embedd_mode != 'random':
+            params = Params({'embedding_dim': 300,
+                             'pretrained_file': args.embedding_path,
+                             'trainable': False})
 
-    # Build Embddering Layer
-    if embedd_mode != 'random':
-        params = Params({'embedding_dim': 300,
-                         'pretrained_file': args.embedding_path,
-                         'trainable': False})
-
-        embedding = Embedding.from_params(allen_vocab, params)
-        embedder = BasicTextFieldEmbedder({'tokens': embedding})
+            embedding = Embedding.from_params(allen_vocab, params)
+            embedder = BasicTextFieldEmbedder({'tokens': embedding})
+        else:
+            # alert not random init here!
+            embedder = None
+            pass
     else:
-        # fixme how to random init ?
+        elmo_model = None
+        token_indexers = None
         embedder = None
-        pass
+        allen_vocab = None
+
+    if bert:
+        bert_path = args.bert_dir + '/' + args.bert_model
+        bert_model = BertModel.from_pretrained(bert_path + '.tar.gz').to(device)
+        if bert_path.find('large') != -1:
+            bert_dim = 1024
+        else:
+            bert_dim = 768
+        for parameter in bert_model.parameters():
+            parameter.requires_grad = False
+        bert_model.eval()
+        bert_tokenizer = BertTokenizer.from_pretrained(bert_path + 'txt', do_lower_case=args.lower)
+    else:
+        bert_model = None
+        bert_tokenizer = None
+        bert_dim = 768
+
+    logger.info("constructing network...")
 
     # alphabet
-    # TODO build tree just has span
-
     word_alphabet = Alphabet('word', default_value=True)
-
-    use_cuda = torch.cuda.is_available()
-    device = torch.device("cuda" if use_cuda else "cpu")
-
     # Read data
     logger.info("Reading Data")
 
@@ -146,19 +165,6 @@ def main():
     dev_dataset = read_sst_data(args.dev, word_alphabet, random=myrandom, merge=True)
     test_dataset = read_sst_data(args.test, word_alphabet, random=myrandom, merge=True)
     word_alphabet.close()
-
-    if elmo != 'none':
-        elmo_model = Elmo(elmo_config, elmo_weight, 1, requires_grad=False, dropout=0.0).to(device)
-    else:
-        elmo_model = None
-    # TODO build bert model
-    if bert_mode != 'none':
-        bert_path = args.bert_dir + '/' + args.bert_model
-        bert = BertModel.from_pretrained(bert_path + '.tar.gz').to(device)
-        for parameter in bert.parameters():
-            parameter.requires_grad = False
-        bert.eval()
-    logger.info("constructing network...")
 
     pre_encode_dim = [int(dim) for dim in args.elmo_preencoder_dim.split(',')]
     pre_encode_layer_dropout_prob = [float(prob) for prob in args.elmo_preencoder_p.split(',')]
@@ -196,6 +202,21 @@ def main():
                                    use_integrator_output_elmo=args.elmo_output, output_dim=output_dim,
                                    output_pool_size=args.elmo_output_pool_size, output_dropout=output_dropout,
                                    elmo=elmo_model, token_indexer=token_indexers, device=device).to(device)
+    elif model_mode == 'elmo_lveg':
+        network = LVeGBiattentive(vocab=allen_vocab, embedder=embedder, embedding_dropout_prob=args.embedding_p,
+                                  word_dim=300, use_input_elmo=args.elmo_input, pre_encode_dim=pre_encode_dim,
+                                  pre_encode_layer_dropout_prob=pre_encode_layer_dropout_prob,
+                                  encode_output_dim=args.elmo_encoder_dim,
+                                  integrtator_output_dim=args.elmo_integrtator_dim,
+                                  integrtator_dropout=args.elmo_integrtator_p,
+                                  use_integrator_output_elmo=args.elmo_output, output_dim=output_dim,
+                                  output_pool_size=args.elmo_output_pool_size, output_dropout=output_dropout,
+                                  elmo=elmo_model, token_indexer=token_indexers, device=device,
+                                  gaussian_dim=args.gaussian_dim, component_num=args.component_num).to(device)
+    elif model_mode == 'bert':
+        # alert should be 2 classification, should test original model first
+        network = BertClassification(tokenizer=bert_tokenizer, pred_dim=bert_dim, pred_dropout=args.bert_pred_dropout,
+                                     bert=bert_model, num_labels=5, device=device)
     else:
         raise NotImplementedError
 

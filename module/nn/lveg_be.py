@@ -8,19 +8,14 @@ from module.util import logsumexp, detect_nan
 
 class BinaryTreeLVeG(nn.Module):
 
-    def __init__(self, num_label, comp, gaussian_dim, attention=False):
+    def __init__(self, num_label, comp, gaussian_dim):
         # alert may we can use attention as mixing weight
-        # TODO let weight as attentnion
         # alert we only use the hidden state to predict the gaussian parameter, maybe we can change here
         # alert why we need transition matrix here??
         super(BinaryTreeLVeG, self).__init__()
         self.num_label = num_label
         self.gaussian_dim = gaussian_dim
-        self.attention = attention
         self.comp = comp
-        self.state_weight_layer = None
-        self.state_mu_layer = None
-        self.state_var_layer = None
 
         self.trans_weight = Parameter(torch.Tensor(num_label, num_label, num_label, comp))
         self.trans_mu_p = Parameter(torch.Tensor(num_label, num_label, num_label, comp, gaussian_dim))
@@ -71,9 +66,15 @@ class BinaryTreeLVeG(nn.Module):
         for child in tree.children:
             children_inside_score.append(self.forward(child))
 
-        state_weight, state_mu, state_var = self.calcualte_emission_gm(tree)
+        state_weight, state_mu, state_var = tree.lveg_cache['state_weight'], \
+                                            tree.lveg_cache['state_mu'], \
+                                            tree.lveg_cache['state_var']
 
         if tree.is_leaf():
+            tree.lveg_cache['in_weight'] = state_weight
+            tree.lveg_cache['in_mu'] = state_mu
+            tree.lveg_cache['in_var'] = state_var
+
             return state_weight, state_mu, state_var
         else:
             assert len(children_inside_score) == 2

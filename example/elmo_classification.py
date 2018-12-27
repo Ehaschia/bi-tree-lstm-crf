@@ -3,7 +3,6 @@ from allennlp.models import BiattentiveClassificationNetwork
 from allennlp.data.dataset_readers import StanfordSentimentTreeBankDatasetReader
 from allennlp.modules.token_embedders.embedding import *
 
-from allennlp.common import Params
 from allennlp.data.vocabulary import Vocabulary
 from allennlp.modules import Elmo, FeedForward, Maxout
 from allennlp.modules.text_field_embedders import BasicTextFieldEmbedder
@@ -13,7 +12,6 @@ from allennlp.data.iterators import BucketIterator
 from allennlp.training import Trainer
 from allennlp.data.token_indexers import ELMoTokenCharactersIndexer, SingleIdTokenIndexer
 from allennlp.models.archival import *
-from allennlp.common.util import prepare_environment
 from allennlp.commands.evaluate import evaluate
 
 import torch.nn as nn
@@ -80,4 +78,5 @@ trainer = Trainer(model=model,
 
 trainer.train()
 print('*'*20 + ' EVALUATE with Best Epoch ' + "*"*20)
-evaluate(model, test_dataset, iterator, cuda_id)
+metric = evaluate(model, test_dataset, iterator, cuda_id)
+print(metric)
