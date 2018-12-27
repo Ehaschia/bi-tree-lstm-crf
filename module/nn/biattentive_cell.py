@@ -315,7 +315,7 @@ class LVeGBiattentiveClassificationNetwork(nn.Module):
 
         weight = self.weight_output_layer(pooled_representations_dropped)
         mu = self.mu_output_layer(pooled_representations_dropped)
-        var = torch.clamp(self.var_output_layer(pooled_representations_dropped))
+        var = torch.clamp(self.var_output_layer(pooled_representations_dropped), min=-10.0, max=10.0)
 
         output_dict = {'weight': weight, 'mu': mu, 'var': var}
         return output_dict
