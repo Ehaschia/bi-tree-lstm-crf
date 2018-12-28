@@ -68,10 +68,18 @@ def main():
     parser.add_argument('--bert_dir', type=str, default='/home/ehaschia/Code/dataset/elmo/')
     parser.add_argument('--bert_model', choices=['bert-base-uncased', 'bert-large-uncased', 'bert-base-cased',
                                                  'bert-large-cased'])
+    parser.add_argument('--random_seed', type=int, default=48)
+
     # load tree
     args = parser.parse_args()
     print(args)
     logger = get_logger("SSTLogger")
+
+    # set random seed
+    random_seed = args.random_seed
+    torch.manual_seed(random_seed)
+    np.random.seed(random_seed)
+    myrandom = Random(random_seed)
 
     batch_size = args.batch_size
     embedd_mode = args.embedding
@@ -158,8 +166,6 @@ def main():
     word_alphabet = Alphabet('word', default_value=True)
     # Read data
     logger.info("Reading Data")
-
-    myrandom = Random(48)
 
     train_dataset = read_sst_data(args.train, word_alphabet, random=myrandom, merge=True)
     dev_dataset = read_sst_data(args.dev, word_alphabet, random=myrandom, merge=True)
@@ -480,6 +486,4 @@ def main():
 
 
 if __name__ == '__main__':
-    torch.manual_seed(48)
-    np.random.seed(48)
     main()
