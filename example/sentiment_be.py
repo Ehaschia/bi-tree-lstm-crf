@@ -69,6 +69,8 @@ def main():
     parser.add_argument('--bert_model', choices=['bert-base-uncased', 'bert-large-uncased', 'bert-base-cased',
                                                  'bert-large-cased'])
     parser.add_argument('--random_seed', type=int, default=48)
+    parser.add_argument('--pcfg_init', action='store_true', help='init the crf or lveg weight according to the '
+                                                                 'distribution of trainning dataset')
 
     # load tree
     args = parser.parse_args()
@@ -172,6 +174,16 @@ def main():
     test_dataset = read_sst_data(args.test, word_alphabet, random=myrandom, merge=True)
     word_alphabet.close()
 
+    # PCFG init
+    if args.pcfg_init and (str.lower(model_mode).find('crf') != -1 or str.lower(model_mode).find('lveg') != -1):
+        if str.lower(model_mode).find('bicrf') != -1 or str.lower(model_mode).find('lveg') != -1:
+            dim = 3
+        else:
+            dim = 2
+        trans_matrix = train_dataset.collect_rule_count(dim, args.num_labels, smooth=True)
+    else:
+        trans_matrix = None
+
     pre_encode_dim = [int(dim) for dim in args.elmo_preencoder_dim.split(',')]
     pre_encode_layer_dropout_prob = [float(prob) for prob in args.elmo_preencoder_p.split(',')]
     output_dim = [int(dim) for dim in args.elmo_output_dim.split(',')]
@@ -197,7 +209,8 @@ def main():
                                  integrtator_dropout=args.elmo_integrtator_p,
                                  use_integrator_output_elmo=args.elmo_output, output_dim=output_dim,
                                  output_pool_size=args.elmo_output_pool_size, output_dropout=output_dropout,
-                                 elmo=elmo_model, token_indexer=token_indexers, device=device).to(device)
+                                 elmo=elmo_model, token_indexer=token_indexers, device=device,
+                                 trans_mat=trans_matrix).to(device)
     elif model_mode == 'elmo_bicrf':
         network = BiCRFBiattentive(vocab=allen_vocab, embedder=embedder, embedding_dropout_prob=args.embedding_p,
                                    word_dim=300, use_input_elmo=args.elmo_input, pre_encode_dim=pre_encode_dim,
@@ -207,7 +220,8 @@ def main():
                                    integrtator_dropout=args.elmo_integrtator_p,
                                    use_integrator_output_elmo=args.elmo_output, output_dim=output_dim,
                                    output_pool_size=args.elmo_output_pool_size, output_dropout=output_dropout,
-                                   elmo=elmo_model, token_indexer=token_indexers, device=device).to(device)
+                                   elmo=elmo_model, token_indexer=token_indexers, device=device,
+                                   trans_mat=trans_matrix).to(device)
     elif model_mode == 'elmo_lveg':
         network = LVeGBiattentive(vocab=allen_vocab, embedder=embedder, embedding_dropout_prob=args.embedding_p,
                                   word_dim=300, use_input_elmo=args.elmo_input, pre_encode_dim=pre_encode_dim,
@@ -218,7 +232,8 @@ def main():
                                   use_integrator_output_elmo=args.elmo_output, output_dim=output_dim,
                                   output_pool_size=args.elmo_output_pool_size, output_dropout=output_dropout,
                                   elmo=elmo_model, token_indexer=token_indexers, device=device,
-                                  gaussian_dim=args.gaussian_dim, component_num=args.component_num).to(device)
+                                  gaussian_dim=args.gaussian_dim, component_num=args.component_num,
+                                  trans_mat=trans_matrix).to(device)
     elif model_mode == 'bert':
         # alert should be 2 classification, should test original model first
         network = BertClassification(tokenizer=bert_tokenizer, pred_dim=bert_dim, pred_dropout=args.bert_pred_dropout,

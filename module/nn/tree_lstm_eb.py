@@ -230,6 +230,7 @@ class CRFBiattentive(Biattentive):
                  elmo: Elmo,
                  # fixme the class of token_indexer
                  token_indexer,
+                 trans_mat,
                  device) -> None:
         super(CRFBiattentive, self).__init__(vocab, embedder, embedding_dropout_prob, word_dim,
                                              use_input_elmo, pre_encode_dim, pre_encode_layer_dropout_prob,
@@ -237,9 +238,9 @@ class CRFBiattentive(Biattentive):
                                              use_integrator_output_elmo, output_dim, output_pool_size,
                                              output_dropout, elmo, token_indexer, device)
         if isinstance(output_dim, List):
-            self.crf = TreeCRF(output_dim[-1])
+            self.crf = TreeCRF(output_dim[-1], trans_mat=trans_mat)
         else:
-            self.crf = TreeCRF(output_dim)
+            self.crf = TreeCRF(output_dim, trans_mat=trans_mat)
 
     def loss(self, tree):
         label_holder = []
@@ -299,6 +300,7 @@ class BiCRFBiattentive(Biattentive):
                  elmo: Elmo,
                  # fixme the class of token_indexer
                  token_indexer,
+                 trans_mat,
                  device) -> None:
         super(BiCRFBiattentive, self).__init__(vocab, embedder, embedding_dropout_prob, word_dim,
                                                use_input_elmo, pre_encode_dim, pre_encode_layer_dropout_prob,
@@ -306,9 +308,9 @@ class BiCRFBiattentive(Biattentive):
                                                use_integrator_output_elmo, output_dim, output_pool_size,
                                                output_dropout, elmo, token_indexer, device)
         if isinstance(output_dim, List):
-            self.crf = BinaryTreeCRF(output_dim[-1])
+            self.crf = BinaryTreeCRF(output_dim[-1], trans_mat=trans_mat)
         else:
-            self.crf = BinaryTreeCRF(output_dim)
+            self.crf = BinaryTreeCRF(output_dim, trans_mat=trans_mat)
 
     def loss(self, tree):
         label_holder = []
@@ -370,6 +372,7 @@ class LVeGBiattentive(nn.Module):
                  elmo: Elmo,
                  # fixme the class of token_indexer
                  token_indexer,
+                 trans_mat,
                  device) -> None:
         super(LVeGBiattentive, self).__init__()
         self.token_indexers = token_indexer
@@ -386,9 +389,9 @@ class LVeGBiattentive(nn.Module):
                                                                      output_pool_size, output_dropout, gaussian_dim,
                                                                      component_num, elmo)
         if isinstance(output_dim, List):
-            self.lveg = BinaryTreeLVeG(output_dim[-1], gaussian_dim=gaussian_dim, comp=component_num)
+            self.lveg = BinaryTreeLVeG(output_dim[-1], gaussian_dim=gaussian_dim, comp=component_num, trans_mat=trans_mat)
         else:
-            self.lveg = BinaryTreeLVeG(output_dim, gaussian_dim=gaussian_dim, comp=component_num)
+            self.lveg = BinaryTreeLVeG(output_dim, gaussian_dim=gaussian_dim, comp=component_num, trans_mat=trans_mat)
 
     def text_to_instance(self, tokens: List[str]) -> Instance:  # type: ignore
         text_field = TextField([Token(x) for x in tokens], token_indexers=self.token_indexers)

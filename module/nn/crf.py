@@ -11,7 +11,7 @@ class TreeCRF(nn.Module):
     '''
 
     def __init__(self, input_size, num_labels, attention=True, biaffine=True,
-                 only_bu=True, pred_mode=None, softmax_in_dim=64, need_pred_dense=False, bert_dim=0):
+                 only_bu=True, pred_mode=None, softmax_in_dim=64, need_pred_dense=False, bert_dim=0, trans_mat=None):
         '''
 
         Args:
@@ -54,7 +54,7 @@ class TreeCRF(nn.Module):
         else:
             raise NotImplementedError("the pred model " + pred_mode + " is not implemented!")
         # self.attention = BiAAttention(input_size, input_size, num_labels, biaffine=biaffine)
-        self.reset_parameter()
+        self.reset_parameter(trans_mat)
 
     def generate_pred_layer(self, input_size, softmax_in_dim, num_labels):
         if self.need_pred_dense:
@@ -110,8 +110,11 @@ class TreeCRF(nn.Module):
             pred = self.pred_layer(hidden)
         return pred
 
-    def reset_parameter(self):
-        nn.init.xavier_normal_(self.trans_matrix)
+    def reset_parameter(self, trans_mat):
+        if trans_mat is None:
+            nn.init.xavier_normal_(self.trans_matrix)
+        else:
+            self.trans_matrix = Parameter(torch.tensor(self.trans_matrix).float())
 
     def forward(self, tree, avg_h):
         # just calculate the inside score
@@ -233,8 +236,8 @@ class TreeCRF(nn.Module):
 
 class BinaryTreeCRF(nn.Module):
 
-    def __init__(self, input_size, num_labels, attention=True, biaffine=True,
-                 only_bu=True, pred_mode=None, softmax_in_dim=64, need_pred_dense=False, bert_dim=0):
+    def __init__(self, input_size, num_labels, attention=True,only_bu=True,
+                 pred_mode=None, softmax_in_dim=64, need_pred_dense=False, bert_dim=0, trans_mat=None):
 
         '''
 
@@ -278,11 +281,13 @@ class BinaryTreeCRF(nn.Module):
             self.get_emission_score = self.td_avg_pred
         else:
             raise NotImplementedError("the pred model " + pred_mode + " is not implemented!")
+        self.reset_parameter(trans_mat)
 
-        self.reset_parameter()
-
-    def reset_parameter(self):
-        nn.init.xavier_normal_(self.trans_matrix)
+    def reset_parameter(self, trans_mat):
+        if trans_mat is None:
+            nn.init.xavier_normal_(self.trans_matrix)
+        else:
+            self.trans_matrix = Parameter(torch.tensor(trans_mat).float())
 
     def collect_avg_hidden(self, tree):
         hidden_collector = tree.collect_hidden_state([])

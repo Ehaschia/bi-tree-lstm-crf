@@ -8,7 +8,7 @@ from module.util import logsumexp, detect_nan
 
 class BinaryTreeLVeG(nn.Module):
 
-    def __init__(self, num_label, comp, gaussian_dim):
+    def __init__(self, num_label, comp, gaussian_dim, trans_mat=None):
         # alert may we can use attention as mixing weight
         # alert we only use the hidden state to predict the gaussian parameter, maybe we can change here
         # alert why we need transition matrix here??
@@ -29,11 +29,19 @@ class BinaryTreeLVeG(nn.Module):
         self.trans_root_var = Parameter(torch.Tensor(num_label, comp, gaussian_dim))
         # is this useful?
         self.trans_root_weight = Parameter(torch.Tensor(num_label, comp))
-        self.reset_parameter()
+        self.reset_parameter(trans_mat)
 
-    def reset_parameter(self):
-
-        nn.init.xavier_normal_(self.trans_weight)
+    def reset_parameter(self, trans_mat):
+        if trans_mat is None:
+            nn.init.xavier_normal_(self.trans_weight)
+        else:
+            if self.comp != 1:
+                nn.init.xavier_normal_(self.trans_weight)
+                base = torch.from_numpy(trans_mat).float().unsqueeze(-1)
+                with torch.no_grad():
+                    self.trans_weight = Parameter(self.trans_weight + base)
+            else:
+                self.trans_weight = Parameter(torch.from_numpy(trans_mat).float()).unsqueeze(-1)
         nn.init.xavier_normal_(self.trans_mu_p)
         nn.init.xavier_normal_(self.trans_mu_lc)
         nn.init.xavier_normal_(self.trans_mu_rc)

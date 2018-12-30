@@ -10,7 +10,7 @@ class TreeCRF(nn.Module):
     Tree CRF layer.
     '''
 
-    def __init__(self, num_labels: int):
+    def __init__(self, num_labels: int, trans_mat=None):
         '''
 
         Args:
@@ -26,10 +26,13 @@ class TreeCRF(nn.Module):
         super(TreeCRF, self).__init__()
         self.num_labels = num_labels
         self.trans_matrix = Parameter(torch.Tensor(self.num_labels, self.num_labels))
-        self.reset_parameter()
+        self.reset_parameter(trans_mat)
 
-    def reset_parameter(self):
-        nn.init.xavier_normal_(self.trans_matrix)
+    def reset_parameter(self, trans_mat):
+        if trans_mat is None:
+            nn.init.xavier_normal_(self.trans_matrix)
+        else:
+            self.trans_matrix = Parameter(torch.from_numpy(trans_mat).float())
 
     def forward(self, tree):
         # just calculate the inside score
@@ -123,7 +126,7 @@ class TreeCRF(nn.Module):
 
 class BinaryTreeCRF(nn.Module):
 
-    def __init__(self, num_labels):
+    def __init__(self, num_labels: int, trans_mat):
 
         """
 
@@ -136,10 +139,13 @@ class BinaryTreeCRF(nn.Module):
         super(BinaryTreeCRF, self).__init__()
         self.num_labels = num_labels
         self.trans_matrix = Parameter(torch.Tensor(self.num_labels, self.num_labels, self.num_labels))
-        self.reset_parameter()
+        self.reset_parameter(trans_mat)
 
-    def reset_parameter(self):
-        nn.init.xavier_normal_(self.trans_matrix)
+    def reset_parameter(self, trans_mat):
+        if trans_mat is None:
+            nn.init.xavier_normal_(self.trans_matrix)
+        else:
+            self.trans_matrix = Parameter(torch.from_numpy(trans_mat).float())
 
     def forward(self, tree):
 

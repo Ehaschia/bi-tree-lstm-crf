@@ -8,8 +8,8 @@ from module.util import logsumexp, detect_nan
 
 class BinaryTreeLVeG(nn.Module):
 
-    def __init__(self, input_dim, num_label, comp, gaussian_dim, attention=True, biaffine=True,
-                 only_bu=True, pred_mode=None, softmax_in_dim=64, need_pred_dense=False, bert_dim=0):
+    def __init__(self, input_dim, num_label, comp, gaussian_dim, attention=True, only_bu=True,
+                 pred_mode=None, softmax_in_dim=64, need_pred_dense=False, bert_dim=0, trans_mat=None):
         # alert may we can use attention as mixing weight
         # TODO let weight as attentnion
         # alert we only use the hidden state to predict the gaussian parameter, maybe we can change here
@@ -64,7 +64,7 @@ class BinaryTreeLVeG(nn.Module):
         else:
             raise NotImplementedError("the pred model " + pred_mode + " is not implemented!")
 
-        self.reset_parameter()
+        self.reset_parameter(trans_mat)
 
     def generate_state_layer(self, input_dim):
         if self.need_pred_dense:
@@ -77,9 +77,17 @@ class BinaryTreeLVeG(nn.Module):
             self.state_mu_layer = nn.Linear(input_dim, self.num_label * self.comp * self.gaussian_dim)
             self.state_var_layer = nn.Linear(input_dim, self.num_label * self.comp * self.gaussian_dim)
 
-    def reset_parameter(self):
-
-        nn.init.xavier_normal_(self.trans_weight)
+    def reset_parameter(self, trans_mat):
+        if trans_mat is None:
+            nn.init.xavier_normal_(self.trans_weight)
+        else:
+            if self.comp != 1:
+                base = torch.tensor(trans_mat).float().unsqueeze(-1)
+                nn.init.xavier_normal_(self.trans_weight)
+                with torch.no_grad():
+                    self.trans_weight = Parameter(self.trans_weight + base)
+            else:
+                self.trans_weight = Parameter(torch.tensor(trans_mat).float()).unsqueeze(-1)
         nn.init.xavier_normal_(self.trans_mu_p)
         nn.init.xavier_normal_(self.trans_mu_lc)
         nn.init.xavier_normal_(self.trans_mu_rc)

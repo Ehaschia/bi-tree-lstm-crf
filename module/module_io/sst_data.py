@@ -149,6 +149,34 @@ class SSTDataset(Dataset):
                 for tree in bucket:
                     tree.replace_unk(word_alphabet, embedding, isTraining=isTraining)
 
+    def count_rule(self, tree, trans_mat):
+        for child in tree.children:
+            self.count_rule(child, trans_mat)
+        if tree.is_leaf():
+            return
+        p_label = tree.label
+        l_lable = tree.children[0].label
+        r_label = tree.children[1].label
+        if len(trans_mat.shape) == 2:
+            trans_mat[p_label, l_lable] += 1
+            trans_mat[p_label, r_label] += 1
+        else:
+            trans_mat[p_label, l_lable, r_label] += 1
+
+    def collect_rule_count(self, dim, label_num, smooth=True):
+        assert dim == 2 or dim == 3
+        trans_mat = np.zeros((label_num, )*dim)
+        assert len(self.full_data) > 0
+        for tree in self.full_data:
+            self.count_rule(tree, trans_mat)
+
+        if smooth:
+            trans_mat = trans_mat + 1
+            for i in range(label_num):
+                norm = np.sum(trans_mat[i])
+                trans_mat[i] = trans_mat[i] / norm
+        return np.log(trans_mat)
+
 
 class SSTDataloader(object):
     def __init__(self, file_path, word_alphabet, lower=False):
