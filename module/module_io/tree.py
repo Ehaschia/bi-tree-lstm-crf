@@ -261,5 +261,15 @@ class Tree(object):
         self.bert_preprocess_distributed(bert_tokenizer, bert, device)
         self.collect_bert_phase(phase_collector)
         phase_cat = torch.stack(phase_collector, dim=0)
-        #fixme here after the centralized, all phase are at root node
         self.bert_phase = phase_cat.detach()
+
+    def convert_to_3_class(self):
+        for child in self.children:
+            child.convert_to_3_class()
+
+        if self.label < 2:
+            self.label = 0
+        elif self.label == 2:
+            self.label = 1
+        else:
+            self.label = 2

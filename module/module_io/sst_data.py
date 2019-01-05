@@ -177,6 +177,11 @@ class SSTDataset(Dataset):
                 trans_mat[i] = trans_mat[i] / norm
         return np.log(trans_mat)
 
+    def convert_to_3_class(self):
+        assert len(self.full_data) > 0
+        for tree in self.full_data:
+            tree.convert_to_3_class()
+
 
 class SSTDataloader(object):
     def __init__(self, file_path, word_alphabet, lower=False):

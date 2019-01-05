@@ -61,7 +61,7 @@ def main():
     parser.add_argument('--elmo_encoder_dim', type=int, default=300)
     parser.add_argument('--elmo_integrtator_dim', type=int, default=300)
     parser.add_argument('--elmo_integrtator_p', type=float, default=0.1)
-    parser.add_argument('--elmo_output_dim', type=str, default='1200,600,5')
+    parser.add_argument('--elmo_output_dim', type=str, default='1200,600')
     parser.add_argument('--elmo_output_p', type=str, default='0.2,0.3,0.0')
     parser.add_argument('--elmo_output_pool_size', type=int, default=4)
     parser.add_argument('--bert_pred_dropout', type=float, default=0.1)
@@ -86,6 +86,7 @@ def main():
     batch_size = args.batch_size
     embedd_mode = args.embedding
     model_mode = args.model_mode
+    num_labels = args.num_labels
 
     elmo = model_mode.find('elmo') != -1
     bert = model_mode.find('bert') != -1
@@ -174,19 +175,24 @@ def main():
     test_dataset = read_sst_data(args.test, word_alphabet, random=myrandom, merge=True)
     word_alphabet.close()
 
+    if num_labels == 3:
+        train_dataset.convert_to_3_class()
+        dev_dataset.convert_to_3_class()
+        test_dataset.convert_to_3_class()
+
     # PCFG init
     if args.pcfg_init and (str.lower(model_mode).find('crf') != -1 or str.lower(model_mode).find('lveg') != -1):
         if str.lower(model_mode).find('bicrf') != -1 or str.lower(model_mode).find('lveg') != -1:
             dim = 3
         else:
             dim = 2
-        trans_matrix = train_dataset.collect_rule_count(dim, args.num_labels, smooth=True)
+        trans_matrix = train_dataset.collect_rule_count(dim, num_labels, smooth=True)
     else:
         trans_matrix = None
 
     pre_encode_dim = [int(dim) for dim in args.elmo_preencoder_dim.split(',')]
     pre_encode_layer_dropout_prob = [float(prob) for prob in args.elmo_preencoder_p.split(',')]
-    output_dim = [int(dim) for dim in args.elmo_output_dim.split(',')]
+    output_dim = [int(dim) for dim in args.elmo_output_dim.split(',')] + [num_labels]
     output_dropout = [float(prob) for prob in args.elmo_output_p.split(',')]
 
     if model_mode == 'elmo':
@@ -237,7 +243,7 @@ def main():
     elif model_mode == 'bert':
         # alert should be 2 classification, should test original model first
         network = BertClassification(tokenizer=bert_tokenizer, pred_dim=bert_dim, pred_dropout=args.bert_pred_dropout,
-                                     bert=bert_model, num_labels=5, device=device)
+                                     bert=bert_model, num_labels=num_labels, device=device)
     else:
         raise NotImplementedError
 
