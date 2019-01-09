@@ -361,7 +361,7 @@ def main():
                 dev_corr['full_bin_phase_v2'] = dev_corr['full_bin_phase']
             dev_tot['full_bin_phase'] += bin_mask.sum()
 
-            if tree.label != 2:
+            if tree.label != int(num_labels/2):
                 dev_corr['bin_phase'] += bin_corr[0].sum()
                 dev_tot['bin_phase'] += bin_mask.sum()
                 dev_corr['bin_sents'] += bin_corr[0][-1]
@@ -422,7 +422,7 @@ def main():
                 # count total number
                 test_total['fine_phase'] += preds.size
                 test_total['full_bin_phase'] += bin_mask.sum()
-                if tree.label != 2:
+                if tree.label != int(num_labels/2):
                     test_total['bin_phase'] += bin_mask.sum()
                     test_total['bin_sents'] += 1.0
 
@@ -436,7 +436,7 @@ def main():
                     else:
                         test_correct[key]['full_bin_phase_v2'] = test_correct[key]['full_bin_phase']
 
-                    if tree.label != 2:
+                    if tree.label != int(num_labels/2):
                         test_correct[key]['bin_phase'] += bin_corr[0].sum()
                         test_correct[key]['bin_sents'] += bin_corr[0][-1]
 

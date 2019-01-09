@@ -88,6 +88,12 @@ class Biattentive(nn.Module):
         self.token_indexers = token_indexer
         self.vocab = vocab
         self.elmo = elmo
+
+        if isinstance(output_dim, List):
+            self.num_labels = output_dim[-1]
+        else:
+            self.num_labels = output_dim
+
         self.biattentive_cell = BiattentiveClassificationNetwork(embedder, embedding_dropout_prob, word_dim,
                                                                  use_input_elmo, pre_encode_dim,
                                                                  pre_encode_layer_dropout_prob, encode_output_dim,
@@ -200,9 +206,11 @@ class Biattentive(nn.Module):
         corr = np.equal(labels, golden_label).astype(float)
 
         # binary target
-        binary_mask = np.not_equal(golden_label, 2).astype(int)
-        binary_preds = ((predictions[:, 3] + predictions[:, 4]) > (predictions[:, 1] + predictions[:, 2])).astype(int)
-        binary_golden = np.greater(golden_label, 2).astype(int)
+        binary_neutral = int(self.num_labels/2)
+        binary_mask = np.not_equal(golden_label, binary_neutral).astype(int)
+        binary_preds = (np.sum(predictions[:, binary_neutral+1:self.num_labels], axis=1) >
+                        np.sum(predictions[:, 0:binary_neutral], axis=1)).astype(int)
+        binary_golden = np.greater(golden_label, binary_neutral).astype(int)
         binary_corr = (np.equal(binary_preds, binary_golden) * binary_mask).astype(float)
 
         output_dict['corr'] = corr
@@ -237,10 +245,7 @@ class CRFBiattentive(Biattentive):
                                              encode_output_dim, integrtator_output_dim, integrtator_dropout,
                                              use_integrator_output_elmo, output_dim, output_pool_size,
                                              output_dropout, elmo, token_indexer, device)
-        if isinstance(output_dim, List):
-            self.crf = TreeCRF(output_dim[-1], trans_mat=trans_mat)
-        else:
-            self.crf = TreeCRF(output_dim, trans_mat=trans_mat)
+        self.crf = TreeCRF(self.num_labels, trans_mat=trans_mat)
 
     def loss(self, tree):
         label_holder = []
@@ -269,9 +274,11 @@ class CRFBiattentive(Biattentive):
 
         # binary target
         binary_mask = np.not_equal(golden_label, 2).astype(int)
-        binary_preds_1 = np.greater(labels, 2)
-        binary_preds_2 = np.greater_equal(labels, 2)
-        binary_lables = np.greater(golden_label, 2)
+        binary_neutral = int(self.num_labels / 2)
+        binary_mask = np.not_equal(golden_label, binary_neutral).astype(int)
+        binary_preds_1 = np.greater(labels, binary_neutral)
+        binary_preds_2 = np.greater_equal(labels, binary_neutral)
+        binary_lables = np.greater(golden_label, binary_neutral)
         binary_corr_1 = (np.equal(binary_preds_1, binary_lables) * binary_mask).astype(float)
         binary_corr_2 = (np.equal(binary_preds_2, binary_lables) * binary_mask).astype(float)
 
@@ -338,10 +345,11 @@ class BiCRFBiattentive(Biattentive):
         corr = np.equal(labels, golden_label).astype(float)
 
         # binary target
-        binary_mask = np.not_equal(golden_label, 2).astype(int)
-        binary_preds_1 = np.greater(labels, 2)
-        binary_preds_2 = np.greater_equal(labels, 2)
-        binary_lables = np.greater(golden_label, 2)
+        binary_neutral = int(self.num_labels/2)
+        binary_mask = np.not_equal(golden_label, binary_neutral).astype(int)
+        binary_preds_1 = np.greater(labels, binary_neutral)
+        binary_preds_2 = np.greater_equal(labels, binary_neutral)
+        binary_lables = np.greater(golden_label, binary_neutral)
         binary_corr_1 = (np.equal(binary_preds_1, binary_lables) * binary_mask).astype(float)
         binary_corr_2 = (np.equal(binary_preds_2, binary_lables) * binary_mask).astype(float)
 
@@ -388,10 +396,13 @@ class LVeGBiattentive(nn.Module):
                                                                      use_integrator_output_elmo, output_dim,
                                                                      output_pool_size, output_dropout, gaussian_dim,
                                                                      component_num, elmo)
+
         if isinstance(output_dim, List):
-            self.lveg = BinaryTreeLVeG(output_dim[-1], gaussian_dim=gaussian_dim, comp=component_num, trans_mat=trans_mat)
+            self.num_labels = output_dim[-1]
         else:
-            self.lveg = BinaryTreeLVeG(output_dim, gaussian_dim=gaussian_dim, comp=component_num, trans_mat=trans_mat)
+            self.num_labels = output_dim
+
+        self.lveg = BinaryTreeLVeG(self.num_labels, gaussian_dim=gaussian_dim, comp=component_num, trans_mat=trans_mat)
 
     def text_to_instance(self, tokens: List[str]) -> Instance:  # type: ignore
         text_field = TextField([Token(x) for x in tokens], token_indexers=self.token_indexers)
@@ -458,10 +469,11 @@ class LVeGBiattentive(nn.Module):
         corr = np.equal(labels, golden_label).astype(float)
 
         # binary target
-        binary_mask = np.not_equal(golden_label, 2).astype(int)
-        binary_preds_1 = np.greater(labels, 2)
-        binary_preds_2 = np.greater_equal(labels, 2)
-        binary_lables = np.greater(golden_label, 2)
+        binary_neutral = int(self.num_labels / 2)
+        binary_mask = np.not_equal(golden_label, binary_neutral).astype(int)
+        binary_preds_1 = np.greater(labels, binary_neutral)
+        binary_preds_2 = np.greater_equal(labels, binary_neutral)
+        binary_lables = np.greater(golden_label, binary_neutral)
         binary_corr_1 = (np.equal(binary_preds_1, binary_lables) * binary_mask).astype(float)
         binary_corr_2 = (np.equal(binary_preds_2, binary_lables) * binary_mask).astype(float)
 
