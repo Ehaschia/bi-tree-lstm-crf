@@ -206,17 +206,18 @@ class Biattentive(nn.Module):
         corr = np.equal(labels, golden_label).astype(float)
 
         # binary target
-        binary_neutral = int(self.num_labels/2)
+        binary_neutral = int(self.num_labels / 2)
         binary_mask = np.not_equal(golden_label, binary_neutral).astype(int)
-        binary_preds = (np.sum(predictions[:, binary_neutral+1:self.num_labels], axis=1) >
-                        np.sum(predictions[:, 0:binary_neutral], axis=1)).astype(int)
-        binary_golden = np.greater(golden_label, binary_neutral).astype(int)
-        binary_corr = (np.equal(binary_preds, binary_golden) * binary_mask).astype(float)
+        binary_preds_1 = np.greater(labels, binary_neutral)
+        binary_preds_2 = np.greater_equal(labels, binary_neutral)
+        binary_lables = np.greater(golden_label, binary_neutral)
+        binary_corr_1 = (np.equal(binary_preds_1, binary_lables) * binary_mask).astype(float)
+        binary_corr_2 = (np.equal(binary_preds_2, binary_lables) * binary_mask).astype(float)
 
         output_dict['corr'] = corr
         output_dict['binary_mask'] = binary_mask
-        output_dict['binary_corr'] = [binary_corr]
-        output_dict['binary_pred'] = [binary_preds]
+        output_dict['binary_corr'] = [binary_corr_1, binary_corr_2]
+        output_dict['binary_pred'] = [binary_preds_1, binary_preds_2]
         return output_dict
 
 
@@ -273,7 +274,6 @@ class CRFBiattentive(Biattentive):
         corr = np.equal(labels, golden_label).astype(float)
 
         # binary target
-        binary_mask = np.not_equal(golden_label, 2).astype(int)
         binary_neutral = int(self.num_labels / 2)
         binary_mask = np.not_equal(golden_label, binary_neutral).astype(int)
         binary_preds_1 = np.greater(labels, binary_neutral)
