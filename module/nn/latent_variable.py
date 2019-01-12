@@ -24,7 +24,8 @@ class BinaryTreeLatentVariable(nn.Module):
         self.bert_dim = bert_dim
 
         self.subtype_num = num_label * comp
-        self.trans_matrix = Parameter(torch.Tensor(self.subtype_num, self.subtype_num, self.subtype_num))
+        self.trans_matrix = Parameter(torch.Tensor(self.num_label, self.num_label, self.num_label,
+                                                   comp, comp, comp))
 
         self.pred_mode = pred_mode
         if pred_mode == 'single_h':
@@ -62,7 +63,8 @@ class BinaryTreeLatentVariable(nn.Module):
             nn.init.xavier_normal_(self.trans_matrix)
         else:
             if self.comp != 1:
-                base = torch.tensor(trans_mat).float().unsqueeze(-1)
+                base = torch.tensor(trans_mat).float().reshape(self.num_label, self.num_label, self.num_label,
+                                                               self.comp, self.comp, self.comp)
                 nn.init.xavier_normal_(self.trans_matrix)
                 with torch.no_grad():
                     self.trans_matrix = Parameter(self.trans_matrix + base)
@@ -134,7 +136,7 @@ class BinaryTreeLatentVariable(nn.Module):
             h = torch.cat([h, tree.bert_phase], dim=0)
         state_w = self.get_emission_gm(h, avg_h)
 
-        tree.crf_cache["state_weight"] = state_w
+        tree.crf_cache["state_weight"] = state_w.reshape(self.num_label, self.comp)
         if tree.is_leaf():
             tree.crf_cache["in_weight"] = tree.crf_cache["state_weight"]
         return state_w
@@ -155,13 +157,15 @@ class BinaryTreeLatentVariable(nn.Module):
             # inside score shape
             # [num_label, comp, gaussian_dim]
 
-            left_child_part = tree.children[0].crf_cache['in_weight'].reshape(1, self.subtype_num, 1)
+            left_child_part = tree.children[0].crf_cache['in_weight'].reshape(1, self.num_label, 1, 1, self.comp, 1)
 
-            right_child_part = tree.children[1].crf_cache['in_weight'].reshape(1, 1, self.subtype_num)
+            right_child_part = tree.children[1].crf_cache['in_weight'].reshape(1, 1, self.num_label, 1, 1, self.comp)
 
-            p_part = tree.crf_cache['state_weight'].reshape(self.subtype_num, 1, 1)
+            p_part = tree.crf_cache['state_weight'].reshape(self.num_label, 1, 1, self.comp, 1, 1)
             inside_score = p_part + left_child_part + right_child_part + self.trans_matrix
-            inside_score = logsumexp(inside_score.reshape(self.subtype_num, -1), dim=1)
+            inside_score = inside_score.permute(0, 3, 1, 2, 4, 5).reshape(self.num_label, self.comp, -1)
+            inside_score = logsumexp(inside_score, dim=2)
+            # shape [num_label, comp]
             tree.crf_cache['in_weight'] = inside_score
             return inside_score
 
@@ -171,7 +175,8 @@ class BinaryTreeLatentVariable(nn.Module):
             children_in_scores.append(self.golden_score(child))
 
         if tree.is_leaf():
-            return tree.crf_cache['state_weight'][tree.label * self.comp: (tree.label + 1) * self.comp]
+            # shape [comp]
+            return tree.crf_cache['state_weight'][tree.label]
 
         assert len(children_in_scores) == 2
 
@@ -181,12 +186,9 @@ class BinaryTreeLatentVariable(nn.Module):
 
         left_child_part = children_in_scores[0].reshape(1, self.comp, 1)
         right_child_part = children_in_scores[1].reshape(1, 1, self.comp)
-        parent_part = tree.crf_cache['state_weight'][p_label * self.comp: (p_label + 1) * self.comp].reshape(self.comp,
-                                                                                                             1, 1)
+        parent_part = tree.crf_cache['state_weight'][p_label].reshape(self.comp, 1, 1)
         golden_score = left_child_part + right_child_part + parent_part + \
-                       self.trans_matrix[p_label * self.comp: (p_label + 1) * self.comp,
-                       l_label * self.comp: (l_label + 1) * self.comp,
-                       r_label * self.comp: (r_label + 1) * self.comp]
+                       self.trans_matrix[p_label, l_label, r_label]
 
         golden_score = logsumexp(golden_score.reshape(self.comp, -1), dim=1)
 
@@ -217,24 +219,25 @@ class BinaryTreeLatentVariable(nn.Module):
 
         # root part
         if tree.parent is None:
-            tree.crf_cache['out_weight'] = tree.crf_cache['in_weight'].new(self.subtype_num).fill_(0.0)
+            tree.crf_cache['out_weight'] = tree.crf_cache['in_weight'].new(self.num_label, self.comp).fill_(0.0)
 
         # left part
-        p_out_score = tree.crf_cache['out_weight'].reshape(self.subtype_num, 1, 1)
+        p_out_score = tree.crf_cache['out_weight'].reshape(self.num_label, 1, 1, self.comp, 1, 1)
 
-        rc_in_score = tree.children[1].crf_cache['in_weight'].reshape(1, 1, self.subtype_num)
-        lc_in_score = tree.children[0].crf_cache['in_weight'].reshape(1, self.subtype_num, 1)
+        rc_in_score = tree.children[1].crf_cache['in_weight'].reshape(1, 1, self.num_label, 1, 1, self.comp)
+        lc_in_score = tree.children[0].crf_cache['in_weight'].reshape(1, self.num_label, 1, 1, self.comp, 1)
 
         lc_out_score = rc_in_score + p_out_score + self.trans_matrix
 
-        # shape [num_label, num_label, num_label, comp, in_comp]
-        lc_out_score = lc_out_score.transpose(0, 1).reshape(self.num_label, -1)
-        lc_out_score = logsumexp(lc_out_score.reshape(self.subtype_num, -1), dim=1)
+        # shape [num_label, num_label, num_label, comp, comp, comp]
+        lc_out_score = lc_out_score.permute(1, 4, 0, 2, 3, 5).reshape(self.num_label, self.comp, -1)
+        lc_out_score = logsumexp(lc_out_score, dim=2)
         tree.children[0].crf_cache['out_weight'] = lc_out_score
 
         # right part
         rc_out_score = lc_in_score + p_out_score + self.trans_matrix
-        rc_out_score = logsumexp(rc_out_score.reshape(self.subtype_num, -1), dim=1)
+        rc_out_score = rc_out_score.permute(2, 5, 0, 1, 3, 4).reshape(self.num_label, self.comp, -1)
+        rc_out_score = logsumexp(rc_out_score, dim=2)
         tree.children[1].crf_cache['out_weight'] = rc_out_score
 
         for child in tree.children:
@@ -251,14 +254,15 @@ class BinaryTreeLatentVariable(nn.Module):
             # calcualte expected count
 
             # get children's inside score and parent's outside score
-            lc_in_score = tree.children[0].crf_cache['in_weight'].reshape(1, self.subtype_num, 1)
+            lc_in_score = tree.children[0].crf_cache['in_weight'].reshape(1, self.num_label, 1, 1, self.comp, 1)
 
-            rc_in_score = tree.children[1].crf_cache['in_weight'].reshape(1, 1, self.subtype_num)
-            p_out_score = tree.crf_cache['out_weight'].reshape(self.subtype_num, 1, 1)
+            rc_in_score = tree.children[1].crf_cache['in_weight'].reshape(1, 1, self.num_label, 1, 1, self.comp)
+            p_out_score = tree.crf_cache['out_weight'].reshape(self.num_label, 1, 1, self.comp, 1, 1)
 
-            expected_count = lc_in_score + rc_in_score + p_out_score + self.trans_matrix
-
-            expected_count = expected_count - logsumexp(expected_count.reshape(self.subtype_num, -1), dim=1).reshape(self.subtype_num,1, 1)
+            expected_count_fined = lc_in_score + rc_in_score + p_out_score + self.trans_matrix
+            expected_count_fined = expected_count_fined.reshape(self.num_label, self.num_label, self.num_label, -1)
+            expected_count = logsumexp(expected_count_fined, dim=3)
+            expected_count = expected_count - logsumexp(expected_count.reshape(self.num_label, -1), dim=1).reshape(self.num_label, 1, 1)
             max_label = torch.argmax(expected_count.reshape(num_label, -1), dim=1).cpu().numpy().astype(int)
             tree.crf_cache['expected_count'] = expected_count
             tree.crf_cache['max_labels'] = max_label
