@@ -28,7 +28,8 @@ def main():
     parser.add_argument('--tree_mode', choices=['SLSTM', 'TreeLSTM', 'BUTreeLSTM'],
                         help='architecture of tree lstm', required=True)
     parser.add_argument('--model_mode', choices=['TreeLSTM', 'BiTreeLSTM', 'CRFTreeLSTM', 'CRFBiTreeLSTM',
-                                                 'BiCRFBiTreeLSTM', 'LVeGTreeLSTM', 'LVeGBiTreeLSTM', 'BiCRFTreeLSTM'],
+                                                 'BiCRFBiTreeLSTM', 'LVeGTreeLSTM', 'LVeGBiTreeLSTM', 'BiCRFTreeLSTM',
+                                                 'LABiCRFTreeLSTM', 'LACRFBiTreeLSTM'],
                         help='architecture of model', required=True)
     parser.add_argument('--pred_mode', choices=['single_h', 'avg_h', 'avg_seq_h'],
                         required=True, help='prediction layer mode')
@@ -244,6 +245,20 @@ def main():
                                 device=device, pred_dense_layer=pred_dense_layer, attention=attention,
                                 coattention_dim=coattention_dim, elmo=elmo, elmo_weight=elmo_weight,
                                 elmo_config=elmo_config).to(device)
+    elif model_mode == 'LABiCRFTreeLSTM':
+        network = LABiCRFTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
+                                  args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
+                                  args.num_labels, embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
+                                  p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn,
+                                  device=device, pred_dense_layer=pred_dense_layer, attention=attention,
+                                  coattention_dim=coattention_dim, comp=args.lveg_comp).to(device)
+    elif model_mode == 'LABiCRFBiTreeLSTM':
+        network = LABiCRFBiTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim,
+                                    word_alphabet.size(), args.hidden_size, args.hidden_size, args.softmax_dim,
+                                    args.leaf_rnn_num, args.num_labels, embedd_word=word_table, p_in=args.p_in,
+                                    p_leaf=args.p_leaf, p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=leaf_rnn,
+                                    bi_leaf_rnn=bi_rnn, device=device, pred_dense_layer=pred_dense_layer,
+                                    attention=attention, coattention_dim=coattention_dim, comp=args.lveg_comp).to(device)
     else:
         raise NotImplementedError
 

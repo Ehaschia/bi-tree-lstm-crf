@@ -7,6 +7,7 @@ from .crf import TreeCRF, BinaryTreeCRF
 from .lveg import BinaryTreeLVeG
 from .attention import CoAttention
 from allennlp.modules.elmo import Elmo, batch_to_ids
+from .latent_variable import *
 
 
 def reset_embedding(init_embedding, embedding_layer, embedding_dim, trainable):
@@ -24,7 +25,7 @@ class TreeLstm(nn.Module):
     def __init__(self, tree_mode, seq_mode, pred_mode, word_dim, num_words, tree_input_dim, output_dim,
                  softmax_in_dim, seq_layer_num, num_labels, embedd_word=None, embedd_trainable=True,
                  p_in=0.5, p_leaf=0.5, p_tree=0.5, p_pred=0.5, leaf_rnn=False, bi_leaf_rnn=False, device=None,
-                 pred_dense_layer=False, attention=False, coattention_dim=150, elmo='None', elmo_weight=None,
+                 pred_dense_layer=False, attention=False, coattention_dim=150, elmo='none', elmo_weight=None,
                  elmo_config=None):
         super(TreeLstm, self).__init__()
 
@@ -705,6 +706,99 @@ class BiCRFTreeLstm(TreeLstm):
         crf_input_dim = coattention_dim if self.use_attention else output_dim
         self.crf = BinaryTreeCRF(crf_input_dim, num_labels, attention=False, pred_mode=pred_mode,
                                  only_bu=True, softmax_in_dim=softmax_in_dim)
+        self.ce_loss = None
+        self.pred_layer = None
+        self.pred = None
+
+    def loss(self, tree):
+        seq_out = self.forward(tree)
+        loss = self.crf.loss(tree)
+        return loss
+
+    def predict(self, tree):
+        seq_output = self.forward(tree)
+        preds = self.crf.predict(tree)
+        preds = torch.Tensor(preds).cpu()
+        target = tree.collect_golden_labels([])
+        target = torch.Tensor(target)
+        # fine gain target
+        corr = torch.eq(preds, target).float()
+
+        # binary target
+        netural_label = int(self.num_labels // 2)
+        binary_mask = target.ne(netural_label)
+        binary_preds_1 = preds > netural_label
+        binary_preds_2 = preds >= netural_label
+        binary_lables = target > netural_label
+        binary_corr_1 = (torch.eq(binary_preds_1, binary_lables) * binary_mask).float()
+        binary_corr_2 = (torch.eq(binary_preds_2, binary_lables) * binary_mask).float()
+        return corr, preds, [binary_corr_1, binary_corr_2], [binary_preds_1, binary_preds_2], binary_mask
+
+
+class LABiCRFTreeLstm(TreeLstm):
+
+    def __init__(self, tree_mode, seq_mode, pred_mode, word_dim, num_words, tree_input_dim, output_dim,
+                 softmax_in_dim, seq_layer_num, num_labels, embedd_word=None, embedd_trainable=True,
+                 p_in=0.5, p_leaf=0.5, p_tree=0.5, p_pred=0.5, leaf_rnn=False, bi_leaf_rnn=False, device=None,
+                 pred_dense_layer=False, attention=False, coattention_dim=150, trans_mat=None, comp=1):
+        super(LABiCRFTreeLstm, self).__init__(tree_mode, seq_mode, pred_mode, word_dim, num_words, tree_input_dim,
+                                              output_dim, softmax_in_dim, seq_layer_num, num_labels,
+                                              embedd_word=embedd_word, embedd_trainable=embedd_trainable, p_in=p_in,
+                                              p_leaf=p_leaf, p_tree=p_tree, p_pred=p_pred, leaf_rnn=leaf_rnn,
+                                              bi_leaf_rnn=bi_leaf_rnn, device=device, pred_dense_layer=pred_dense_layer,
+                                              attention=attention, coattention_dim=coattention_dim)
+        crf_input_dim = coattention_dim if self.use_attention else output_dim
+        self.crf = BinaryTreeLatentVariable(crf_input_dim, num_labels, comp, attention=False, pred_mode=pred_mode,
+                                            only_bu=True, softmax_in_dim=softmax_in_dim,
+                                            need_pred_dense=pred_dense_layer,
+                                            trans_mat=trans_mat)
+        self.ce_loss = None
+        self.pred_layer = None
+        self.pred = None
+
+    def loss(self, tree):
+        seq_out = self.forward(tree)
+        loss = self.crf.loss(tree)
+        return loss
+
+    def predict(self, tree):
+        seq_output = self.forward(tree)
+        preds = self.crf.predict(tree)
+        preds = torch.Tensor(preds).cpu()
+        target = tree.collect_golden_labels([])
+        target = torch.Tensor(target)
+        # fine gain target
+        corr = torch.eq(preds, target).float()
+
+        # binary target
+        netural_label = int(self.num_labels // 2)
+        binary_mask = target.ne(netural_label)
+        binary_preds_1 = preds > netural_label
+        binary_preds_2 = preds >= netural_label
+        binary_lables = target > netural_label
+        binary_corr_1 = (torch.eq(binary_preds_1, binary_lables) * binary_mask).float()
+        binary_corr_2 = (torch.eq(binary_preds_2, binary_lables) * binary_mask).float()
+        return corr, preds, [binary_corr_1, binary_corr_2], [binary_preds_1, binary_preds_2], binary_mask
+
+
+class LABiCRFBiTreeLstm(BiTreeLstm):
+
+    def __init__(self, tree_mode, seq_mode, pred_mode, word_dim, num_words, tree_input_dim, output_dim,
+                 softmax_in_dim, seq_layer_num, num_labels, embedd_word=None, embedd_trainable=True,
+                 p_in=0.5, p_leaf=0.5, p_tree=0.5, p_pred=0.5, leaf_rnn=False, bi_leaf_rnn=False, device=None,
+                 pred_dense_layer=False, attention=False, coattention_dim=150, trans_mat=None, comp=1):
+        super(LABiCRFBiTreeLstm, self).__init__(tree_mode, seq_mode, pred_mode, word_dim, num_words, tree_input_dim,
+                                                output_dim, softmax_in_dim, seq_layer_num, num_labels,
+                                                embedd_word=embedd_word, embedd_trainable=embedd_trainable, p_in=p_in,
+                                                p_leaf=p_leaf, p_tree=p_tree, p_pred=p_pred, leaf_rnn=leaf_rnn,
+                                                bi_leaf_rnn=bi_leaf_rnn, device=device,
+                                                pred_dense_layer=pred_dense_layer,
+                                                attention=attention, coattention_dim=coattention_dim)
+        crf_input_dim = coattention_dim if self.use_attention else output_dim
+        self.crf = BinaryTreeLatentVariable(crf_input_dim, num_labels, comp, attention=False, pred_mode=pred_mode,
+                                            only_bu=True, softmax_in_dim=softmax_in_dim,
+                                            need_pred_dense=pred_dense_layer,
+                                            trans_mat=trans_mat)
         self.ce_loss = None
         self.pred_layer = None
         self.pred = None
