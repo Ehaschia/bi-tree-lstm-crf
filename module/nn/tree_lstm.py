@@ -74,6 +74,7 @@ class TreeLstm(nn.Module):
         self.pred_dense_layer = pred_dense_layer
         self.dense_softmax = None
         self.pred_layer = None
+        self.num_labels = num_labels
 
         # cross_entropy loss
         self.ce_loss = nn.CrossEntropyLoss()
@@ -267,12 +268,22 @@ class TreeLstm(nn.Module):
         # fine gain target
         corr = torch.eq(preds, target).float()
 
-        # binary target
-        binary_mask = target.ne(2)
-        binary_preds = ((pred_score[:, 3] + pred_score[:, 4]) > (pred_score[:, 1] + pred_score[:, 2])).cpu()
-        binary_lables = target > 2
-        binary_corr = (torch.eq(binary_preds, binary_lables) * binary_mask).float()
-        return corr, preds, [binary_corr], [binary_preds], binary_mask
+        # # binary target
+        # netural_label = int(self.num_labels//2)
+        # binary_mask = target.ne(netural_label)
+        # binary_preds = ((pred_score[:, 3] + pred_score[:, 4]) > (pred_score[:, 1] + pred_score[:, 2])).cpu()
+        # binary_lables = target > int(self.num_labels//2)
+        # binary_corr = (torch.eq(binary_preds, binary_lables) * binary_mask).float()
+        # return corr, preds, [binary_corr], [binary_preds], binary_mask
+        netural_label = int(self.num_labels // 2)
+        binary_mask = target.ne(netural_label)
+        binary_preds_1 = preds > netural_label
+        binary_preds_2 = preds >= netural_label
+        binary_lables = target > netural_label
+        binary_corr_1 = (torch.eq(binary_preds_1, binary_lables) * binary_mask).float()
+        binary_corr_2 = (torch.eq(binary_preds_2, binary_lables) * binary_mask).float()
+        return corr, preds, [binary_corr_1, binary_corr_2], [binary_preds_1, binary_preds_2], binary_mask
+
 
 
 class BiTreeLstm(TreeLstm):
@@ -482,10 +493,11 @@ class CRFTreeLstm(TreeLstm):
         # fine gain target
         corr = torch.eq(preds, target).float()
         # binary target
-        binary_mask = target.ne(2)
-        binary_preds_1 = preds > 2
-        binary_preds_2 = preds >= 2
-        binary_lables = target > 2
+        netural_label = int(self.num_labels // 2)
+        binary_mask = target.ne(netural_label)
+        binary_preds_1 = preds > netural_label
+        binary_preds_2 = preds >= netural_label
+        binary_lables = target > netural_label
         binary_corr_1 = (torch.eq(binary_preds_1, binary_lables) * binary_mask).float()
         binary_corr_2 = (torch.eq(binary_preds_2, binary_lables) * binary_mask).float()
         return corr, preds, [binary_corr_1, binary_corr_2], [binary_preds_1, binary_preds_2], binary_mask
@@ -573,10 +585,11 @@ class LVeGBiTreeLstm(BiTreeLstm):
         corr = torch.eq(preds, target).float()
 
         # binary target
-        binary_mask = target.ne(2)
-        binary_preds_1 = preds > 2
-        binary_preds_2 = preds >= 2
-        binary_lables = target > 2
+        netural_label = int(self.num_labels // 2)
+        binary_mask = target.ne(netural_label)
+        binary_preds_1 = preds > netural_label
+        binary_preds_2 = preds >= netural_label
+        binary_lables = target > netural_label
         binary_corr_1 = (torch.eq(binary_preds_1, binary_lables) * binary_mask).float()
         binary_corr_2 = (torch.eq(binary_preds_2, binary_lables) * binary_mask).float()
         return corr, preds, [binary_corr_1, binary_corr_2], [binary_preds_1, binary_preds_2], binary_mask
@@ -665,10 +678,11 @@ class BiCRFBiTreeLstm(BiTreeLstm):
         corr = torch.eq(preds, target).float()
 
         # binary target
-        binary_mask = target.ne(2)
-        binary_preds_1 = preds > 2
-        binary_preds_2 = preds >= 2
-        binary_lables = target > 2
+        netural_label = int(self.num_labels // 2)
+        binary_mask = target.ne(netural_label)
+        binary_preds_1 = preds > netural_label
+        binary_preds_2 = preds >= netural_label
+        binary_lables = target > netural_label
         binary_corr_1 = (torch.eq(binary_preds_1, binary_lables) * binary_mask).float()
         binary_corr_2 = (torch.eq(binary_preds_2, binary_lables) * binary_mask).float()
         return corr, preds, [binary_corr_1, binary_corr_2], [binary_preds_1, binary_preds_2], binary_mask
@@ -710,10 +724,11 @@ class BiCRFTreeLstm(TreeLstm):
         corr = torch.eq(preds, target).float()
 
         # binary target
-        binary_mask = target.ne(2)
-        binary_preds_1 = preds > 2
-        binary_preds_2 = preds >= 2
-        binary_lables = target > 2
+        netural_label = int(self.num_labels // 2)
+        binary_mask = target.ne(netural_label)
+        binary_preds_1 = preds > netural_label
+        binary_preds_2 = preds >= netural_label
+        binary_lables = target > netural_label
         binary_corr_1 = (torch.eq(binary_preds_1, binary_lables) * binary_mask).float()
         binary_corr_2 = (torch.eq(binary_preds_2, binary_lables) * binary_mask).float()
         return corr, preds, [binary_corr_1, binary_corr_2], [binary_preds_1, binary_preds_2], binary_mask

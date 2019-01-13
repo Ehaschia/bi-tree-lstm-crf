@@ -2,7 +2,7 @@ __author__ = 'Ehaschia'
 
 import argparse, sys, os
 
-sys.path.append('/home/ehaschia/Code/bi-tree-lstm-crf')
+sys.path.append('/home/ehaschia/Code/sentiment/bi-tree-lstm-crf')
 
 import time
 
@@ -43,7 +43,7 @@ def main():
     parser.add_argument('--momentum', type=float, default=0.9, help='momentum factor')
     parser.add_argument('--decay_rate', type=float, default=0.1, help='Decay rate of learning rate')
     parser.add_argument('--gamma', type=float, default=0.0, help='weight for regularization')
-    parser.add_argument('--schedule', type=int, help='schedule for learning rate decay')
+    parser.add_argument('--schedule', type=int, default=5, help='schedule for learning rate decay')
 
     parser.add_argument('--embedding', choices=['glove', 'senna', 'sskip', 'polyglot', 'random'],
                         help='Embedding for words', required=True)
@@ -86,6 +86,8 @@ def main():
     elmo = args.elmo
     elmo_weight = args.elmo_weight
     elmo_config = args.elmo_config
+
+    num_labels = args.num_labels
 
     all_cite_version = ['fine_phase', 'fine_sents', 'bin_phase', 'bin_sents',
                         'bin_phase_v2', 'bin_sents_v2', 'full_bin_phase', 'full_bin_phase_v2']
@@ -162,6 +164,11 @@ def main():
                 f.write('\n')
         print('Save emebdding to ' + path + '/' + name)
 
+    if num_labels == 3:
+        train_dataset.convert_to_3_class()
+        dev_dataset.convert_to_3_class()
+        test_dataset.convert_to_3_class()
+
     train_dataset.replace_unk(word_alphabet, embedd_dict, isTraining=True)
     print('DEV UNK')
     dev_dataset.replace_unk(word_alphabet, embedd_dict, isTraining=False)
@@ -177,21 +184,21 @@ def main():
     logger.info("constructing network...")
     if model_mode == 'TreeLSTM':
         network = TreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
-                           args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num, args.num_labels,
+                           args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num, num_labels,
                            embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf, p_tree=args.p_tree,
                            p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn, device=device,
                            pred_dense_layer=pred_dense_layer, attention=attention, coattention_dim=coattention_dim,
                            elmo=elmo, elmo_weight=elmo_weight, elmo_config=elmo_config).to(device)
     elif model_mode == 'BiTreeLSTM':
         network = BiTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
-                             args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num, args.num_labels,
+                             args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num, num_labels,
                              embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf, p_tree=args.p_tree,
                              p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn, device=device,
                              pred_dense_layer=pred_dense_layer, attention=attention, coattention_dim=coattention_dim,
                              elmo=elmo, elmo_weight=elmo_weight, elmo_config=elmo_config).to(device)
     elif model_mode == 'CRFTreeLSTM':
         network = CRFTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
-                              args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num, args.num_labels,
+                              args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num, num_labels,
                               embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf, p_tree=args.p_tree,
                               p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn, device=device,
                               pred_dense_layer=pred_dense_layer, attention=attention, coattention_dim=coattention_dim,
@@ -199,7 +206,7 @@ def main():
     elif model_mode == 'CRFBiTreeLSTM':
         network = CRFBiTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                                 args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
-                                args.num_labels, embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
+                                num_labels, embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
                                 p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn,
                                 device=device, pred_dense_layer=pred_dense_layer, attention=attention,
                                 coattention_dim=coattention_dim, elmo=elmo, elmo_weight=elmo_weight,
@@ -207,7 +214,7 @@ def main():
     elif model_mode == 'LVeGTreeLSTM':
         network = LVeGTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                                args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
-                               args.num_labels, embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
+                               num_labels, embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
                                p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn,
                                device=device, comp=args.lveg_comp, g_dim=args.gaussian_dim,
                                pred_dense_layer=pred_dense_layer, attention=attention,
@@ -216,7 +223,7 @@ def main():
     elif model_mode == 'LVeGBiTreeLSTM':
         network = LVeGBiTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                                  args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
-                                 args.num_labels, embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
+                                 num_labels, embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
                                  p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn,
                                  device=device, comp=args.lveg_comp, g_dim=args.gaussian_dim, attention=attention,
                                  coattention_dim=coattention_dim, elmo=elmo, elmo_weight=elmo_weight,
@@ -224,7 +231,7 @@ def main():
     elif model_mode == 'BiCRFBiTreeLSTM':
         network = BiCRFBiTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                                   args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
-                                  args.num_labels, embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
+                                  num_labels, embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
                                   p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn,
                                   device=device, pred_dense_layer=pred_dense_layer, attention=attention,
                                   coattention_dim=coattention_dim, elmo=elmo, elmo_weight=elmo_weight,
@@ -232,7 +239,7 @@ def main():
     elif model_mode == 'BiCRFTreeLSTM':
         network = BiCRFTreeLstm(args.tree_mode, args.leaf_rnn_mode, args.pred_mode, embedd_dim, word_alphabet.size(),
                                 args.hidden_size, args.hidden_size, args.softmax_dim, args.leaf_rnn_num,
-                                args.num_labels, embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
+                                num_labels, embedd_word=word_table, p_in=args.p_in, p_leaf=args.p_leaf,
                                 p_tree=args.p_tree, p_pred=args.p_pred, leaf_rnn=leaf_rnn, bi_leaf_rnn=bi_rnn,
                                 device=device, pred_dense_layer=pred_dense_layer, attention=attention,
                                 coattention_dim=coattention_dim, elmo=elmo, elmo_weight=elmo_weight,
@@ -351,7 +358,7 @@ def main():
                 dev_corr['full_bin_phase_v2'] = dev_corr['full_bin_phase']
             dev_tot['full_bin_phase'] += bin_mask.sum().item()
 
-            if tree.label != 2:
+            if tree.label != int(num_labels//2):
                 dev_corr['bin_phase'] += bin_corr[0].sum().item()
                 dev_tot['bin_phase'] += bin_mask.sum().item()
                 dev_corr['bin_sents'] += bin_corr[0][-1].item()
@@ -411,7 +418,7 @@ def main():
                 # count total number
                 test_total['fine_phase'] += preds.size()[0]
                 test_total['full_bin_phase'] += bin_mask.sum().item()
-                if tree.label != 2:
+                if tree.label != int(num_labels//2):
                     test_total['bin_phase'] += bin_mask.sum().item()
                     test_total['bin_sents'] += 1.0
 
@@ -425,7 +432,7 @@ def main():
                     else:
                         test_correct[key]['full_bin_phase_v2'] = test_correct[key]['full_bin_phase']
 
-                    if tree.label != 2:
+                    if tree.label != int(num_labels//2):
                         test_correct[key]['bin_phase'] += bin_corr[0].sum().item()
                         test_correct[key]['bin_sents'] += bin_corr[0][-1].item()
 

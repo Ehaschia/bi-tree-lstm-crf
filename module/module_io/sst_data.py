@@ -149,6 +149,12 @@ class SSTDataset(Dataset):
                 for tree in bucket:
                     tree.replace_unk(word_alphabet, embedding, isTraining=isTraining)
 
+    def convert_to_3_class(self):
+        assert len(self.full_data) > 0
+        for tree in self.full_data:
+            tree.convert_to_3_class()
+
+
 class SSTDataloader(object):
     def __init__(self, file_path, word_alphabet):
         self.__source_file = open(file_path, 'r')

@@ -192,3 +192,14 @@ class Tree(object):
                         self.word_idx = word_alphabet.get_idx(lower)
                     elif lower not in embedding:
                         print('[UNK]: ' + self.str_word)
+
+    def convert_to_3_class(self):
+        for child in self.children:
+            child.convert_to_3_class()
+
+        if self.label < 2:
+            self.label = 0
+        elif self.label == 2:
+            self.label = 1
+        else:
+            self.label = 2
