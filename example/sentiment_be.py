@@ -2,11 +2,11 @@ __author__ = 'Ehaschia'
 
 import argparse
 import sys
-
+import os
 sys.path.append('/home/ehaschia/Code/bi-tree-lstm-crf')
 
 import time
-
+import datetime
 import torch.optim as optim
 from tqdm import tqdm
 
@@ -71,6 +71,10 @@ def main():
     parser.add_argument('--random_seed', type=int, default=48)
     parser.add_argument('--pcfg_init', action='store_true', help='init the crf or lveg weight according to the '
                                                                  'distribution of trainning dataset')
+    parser.add_argument('--save_model', action='store_true', help='save_model')
+    parser.add_argument('--load_model', action='store_true', help='load_model')
+    parser.add_argument('--model_path', default='./model/')
+    parser.add_argument('--model_name', default=None)
 
     # load tree
     args = parser.parse_args()
@@ -93,6 +97,17 @@ def main():
 
     elmo_weight = args.elmo_weight
     elmo_config = args.elmo_config
+
+    load_model = args.load_model
+    save_model = args.save_model
+    model_path = args.model_path
+    if not os.path.exists(model_path):
+        os.makedirs(model_path)
+    model_name = args.model_name
+    if save_model:
+        model_name = model_path + '/' + model_mode + datetime.datetime.now().strftime("%H%M%S")
+    if load_model:
+        model_name = model_path + '/' + model_name
 
     use_cuda = torch.cuda.is_available()
     device = torch.device("cuda" if use_cuda else "cpu")
@@ -247,6 +262,10 @@ def main():
     else:
         raise NotImplementedError
 
+    if load_model:
+        logger.info('Load model from:' + model_name)
+        network.load_state_dict(torch.load(model_name))
+
     optim_method = args.optim_method
     learning_rate = args.learning_rate
     lr = learning_rate
@@ -334,6 +353,10 @@ def main():
             epoch, args.epoch, train_err / len(train_dataset), train_time))
 
         add_scalar_summary(summary_writer, 'train/loss', train_err / len(train_dataset), epoch)
+
+        if save_model:
+            logger.info('Save model to ' + model_name + '_' + str(epoch))
+            torch.save(network.state_dict(), model_name + '_' + str(epoch))
 
         network.eval()
         dev_corr = {'fine_phase': 0.0, 'fine_sents': 0.0, 'bin_phase': 0.0, 'bin_sents': 0.0,
