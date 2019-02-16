@@ -16,6 +16,7 @@ from module.module_io.sst_data import *
 from module.nn.tree_lstm import *
 from tensorboardX import SummaryWriter
 from module.util import detect_nan
+import datetime
 
 
 def main():
@@ -69,6 +70,10 @@ def main():
                         default='/home/ehaschia/Code/dataset/elmo/elmo_2x4096_512_2048cnn_2xhighway_weights.hdf5')
     parser.add_argument('--elmo_config', type=str,
                         default='/home/ehaschia/Code/dataset/elmo/elmo_2x4096_512_2048cnn_2xhighway_options.json')
+    parser.add_argument('--save_model', action='store_true', help='save_model')
+    parser.add_argument('--load_model', action='store_true', help='load_model')
+    parser.add_argument('--model_path', default='./model/')
+    parser.add_argument('--model_name', default=None)
 
     # load tree
     args = parser.parse_args()
@@ -89,6 +94,17 @@ def main():
     elmo_config = args.elmo_config
 
     num_labels = args.num_labels
+
+    load_model = args.load_model
+    save_model = args.save_model
+    model_path = args.model_path
+    if not os.path.exists(model_path):
+        os.makedirs(model_path)
+    model_name = args.model_name
+    if save_model:
+        model_name = model_path + '/' + model_mode + datetime.datetime.now().strftime("%H%M%S")
+    if load_model:
+        model_name = model_path + '/' + model_name
 
     all_cite_version = ['fine_phase', 'fine_sents', 'bin_phase', 'bin_sents',
                         'bin_phase_v2', 'bin_sents_v2', 'full_bin_phase', 'full_bin_phase_v2']
@@ -262,6 +278,10 @@ def main():
     else:
         raise NotImplementedError
 
+    if load_model:
+        logger.info('Load model from:' + model_name)
+        network.load_state_dict(torch.load(model_name))
+
     optim_method = args.optim_method
     learning_rate = args.learning_rate
     lr = learning_rate
@@ -349,6 +369,10 @@ def main():
             epoch, args.epoch, train_err / len(train_dataset), train_time))
 
         add_scalar_summary(summary_writer, 'train/loss', train_err / len(train_dataset), epoch)
+
+        if save_model:
+            logger.info('Save model to ' + model_name + '_' + str(epoch))
+            torch.save(network.state_dict(), model_name + '_' + str(epoch))
 
         network.eval()
         dev_corr = {'fine_phase': 0.0, 'fine_sents': 0.0, 'bin_phase': 0.0, 'bin_sents': 0.0,
