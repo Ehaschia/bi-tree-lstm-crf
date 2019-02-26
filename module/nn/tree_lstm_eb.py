@@ -12,8 +12,10 @@ from allennlp.nn.util import move_to_device
 from allennlp.training.metrics import CategoricalAccuracy
 from pytorch_pretrained_bert import BertModel, BertTokenizer
 
-from .biattentive_cell import BiattentiveClassificationNetwork, LVeGBiattentiveClassificationNetwork
+from .biattentive_cell import BiattentiveClassificationNetwork, LVeGBiattentiveClassificationNetwork, \
+    LABiattentiveClassificationNetwork
 from .crf_be import *
+from .latent_variable_be import BinaryTreeLatentVariable
 from .lveg_be import BinaryTreeLVeG
 from ..module_io.tree import Tree
 
@@ -49,11 +51,11 @@ def sort_by_padding(instances: List[Instance],
 
 
 def set_logits_back(tree: Tree, tensor: Union[torch.Tensor, List[torch.Tensor]], idx: List, model_name='crf',
-                    name: Union[str, List[str]]='be_hidden'):
+                    name: Union[str, List[str]] = 'be_hidden'):
     for child in tree.children:
         set_logits_back(child, tensor, idx, model_name=model_name, name=name)
-    if model_name == 'crf':
-        assert name == 'be_hidden'
+    if model_name == 'crf' or 'la':
+        # assert name == 'be_hidden'
         tree.crf_cache[name] = tensor[idx[0]]
     else:
         assert isinstance(name, List)
@@ -345,7 +347,7 @@ class BiCRFBiattentive(Biattentive):
         corr = np.equal(labels, golden_label).astype(float)
 
         # binary target
-        binary_neutral = int(self.num_labels/2)
+        binary_neutral = int(self.num_labels / 2)
         binary_mask = np.not_equal(golden_label, binary_neutral).astype(int)
         binary_preds_1 = np.greater(labels, binary_neutral)
         binary_preds_2 = np.greater_equal(labels, binary_neutral)
@@ -358,6 +360,122 @@ class BiCRFBiattentive(Biattentive):
         output_dict['binary_corr'] = [binary_corr_1, binary_corr_2]
         output_dict['binary_pred'] = [binary_preds_1, binary_preds_2]
         return output_dict
+
+
+class LABiattentive(nn.Module):
+    def __init__(self, vocab: Vocabulary,
+                 embedder: TextFieldEmbedder,
+                 embedding_dropout_prob: float,
+                 word_dim: int,
+                 use_input_elmo: bool,
+                 pre_encode_dim: Union[int, List[int]],
+                 pre_encode_layer_dropout_prob: Union[float, List[float]],
+                 encode_output_dim: int,
+                 integrtator_output_dim: int,
+                 integrtator_dropout: float,
+                 use_integrator_output_elmo: bool,
+                 output_dim: Union[int, List[int]],
+                 output_pool_size: int,
+                 output_dropout: Union[float, List[float]],
+                 elmo: Elmo,
+                 comp: int,
+                 token_indexer,
+                 trans_mat,
+                 device) -> None:
+        super(LABiattentive, self).__init__()
+        self.token_indexers = token_indexer
+        self.vocab = vocab
+        self.elmo = elmo
+        self.device = device
+        self.comp = comp
+        self.biattentive_cell = LABiattentiveClassificationNetwork(embedder, embedding_dropout_prob, word_dim,
+                                                                   use_input_elmo, pre_encode_dim,
+                                                                   pre_encode_layer_dropout_prob, encode_output_dim,
+                                                                   integrtator_output_dim, integrtator_dropout,
+                                                                   use_integrator_output_elmo, output_dim,
+                                                                   output_pool_size, output_dropout, comp, elmo)
+
+        if isinstance(output_dim, List):
+            self.num_labels = output_dim[-1]
+        else:
+            self.num_labels = output_dim
+
+        self.la = BinaryTreeLatentVariable(self.num_labels, comp=comp, trans_mat=trans_mat)
+
+    def loss(self, tree):
+        label_holder = []
+        tree.collect_golden_labels(label_holder)
+        idx_list = [i for i in range(len(label_holder))]
+        label_holder = torch.tensor(label_holder).to(self.device)
+        output = self.forward(tree, label=label_holder)
+        set_logits_back(tree, output['la'], idx_list, model_name='la', name='state_weight')
+        loss = self.la.loss(tree)
+        output['loss'] = loss
+
+        return output
+
+    def collect_phase(self, tree, holder):
+        for child in tree.children:
+            self.collect_phase(child, holder)
+        holder.append(tree.get_str_yield())
+
+    def text_to_instance(self, tokens: List[str]) -> Instance:  # type: ignore
+        text_field = TextField([Token(x) for x in tokens], token_indexers=self.token_indexers)
+        fields: Dict[str, Field] = {"tokens": text_field}
+        return Instance(fields)
+
+    def predict(self, tree):
+        label_holder = []
+        tree.collect_golden_labels(label_holder)
+        golden_label = np.array(label_holder)
+        idx_list = [i for i in range(len(label_holder))]
+        output_dict = self.forward(tree)
+        set_logits_back(tree, output_dict['la'], idx_list, model_name='la', name='state_weight')
+        labels = np.array(self.la.predict(tree))
+
+        output_dict['label'] = labels
+        # fine gain target
+        corr = np.equal(labels, golden_label).astype(float)
+
+        # binary target
+        binary_neutral = int(self.num_labels / 2)
+        binary_mask = np.not_equal(golden_label, binary_neutral).astype(int)
+        binary_preds_1 = np.greater(labels, binary_neutral)
+        binary_preds_2 = np.greater_equal(labels, binary_neutral)
+        binary_lables = np.greater(golden_label, binary_neutral)
+        binary_corr_1 = (np.equal(binary_preds_1, binary_lables) * binary_mask).astype(float)
+        binary_corr_2 = (np.equal(binary_preds_2, binary_lables) * binary_mask).astype(float)
+
+        output_dict['corr'] = corr
+        output_dict['binary_mask'] = binary_mask
+        output_dict['binary_corr'] = [binary_corr_1, binary_corr_2]
+        output_dict['binary_pred'] = [binary_preds_1, binary_preds_2]
+        return output_dict
+
+    def forward(self, tree: Tree,
+                label: torch.LongTensor = None) -> Dict[str, torch.Tensor]:
+        str_phase_holder = []
+        self.collect_phase(tree, str_phase_holder)
+        # tokenize and elmo tokenize
+        instances = [self.text_to_instance(phase) for phase in str_phase_holder]
+        idx, instances = sort_by_padding(instances, [("tokens", "num_tokens")], self.vocab)
+        batch = Batch(instances)
+        pad_lengths = batch.get_padding_lengths()
+        tensor_dict = batch.as_tensor_dict(pad_lengths)
+        tensor_dict = move_to_device(tensor_dict, 0)
+        output = self.biattentive_cell(**tensor_dict)
+        # alert reshape the result to [length, comp, gaussian]
+        # alert here is ugly
+        batch_size, labels = output['la'].size()
+        labels = labels // self.comp
+        output['la'] = output['la'].reshape(batch_size, labels, self.comp)
+        # resort output result
+        new_idx = [i for i in range(len(instances))]
+        for pos, name in enumerate(idx):
+            new_idx[name] = pos
+        for name, tensor in output.items():
+            output[name] = torch.stack([tensor[i] for i in new_idx])
+        return output
 
 
 class LVeGBiattentive(nn.Module):

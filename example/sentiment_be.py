@@ -3,6 +3,7 @@ __author__ = 'Ehaschia'
 import argparse
 import sys
 import os
+
 sys.path.append('/home/ehaschia/Code/bi-tree-lstm-crf')
 
 import time
@@ -26,7 +27,7 @@ from allennlp.modules.text_field_embedders import BasicTextFieldEmbedder
 def main():
     parser = argparse.ArgumentParser(description='Tuning with bi-directional Tree-LSTM-CRF')
     parser.add_argument('--model_mode', choices=['elmo', 'elmo_crf', 'elmo_bicrf', 'elmo_lveg',
-                                                 'bert', 'bert_crf', 'bert_bicrf', 'bert_lveg'])
+                                                 'bert', 'elmo_la'])
     parser.add_argument('--batch_size', type=int, default=16, help='Number of batch')
     parser.add_argument('--epoch', type=int, default=50, help='run epoch')
     parser.add_argument('--optim_method', choices=['SGD', 'Adadelta', 'Adagrad', 'Adam', 'RMSprop'],
@@ -255,6 +256,17 @@ def main():
                                   elmo=elmo_model, token_indexer=token_indexers, device=device,
                                   gaussian_dim=args.gaussian_dim, component_num=args.component_num,
                                   trans_mat=trans_matrix).to(device)
+    elif model_mode == 'elmo_la':
+        network = LABiattentive(vocab=allen_vocab, embedder=embedder, embedding_dropout_prob=args.embedding_p,
+                                word_dim=300, use_input_elmo=args.elmo_input, pre_encode_dim=pre_encode_dim,
+                                pre_encode_layer_dropout_prob=pre_encode_layer_dropout_prob,
+                                encode_output_dim=args.elmo_encoder_dim,
+                                integrtator_output_dim=args.elmo_integrtator_dim,
+                                integrtator_dropout=args.elmo_integrtator_p,
+                                use_integrator_output_elmo=args.elmo_output, output_dim=output_dim,
+                                output_pool_size=args.elmo_output_pool_size, output_dropout=output_dropout,
+                                elmo=elmo_model, token_indexer=token_indexers, device=device,
+                                comp=args.component_num, trans_mat=trans_matrix).to(device)
     elif model_mode == 'bert':
         # alert should be 2 classification, should test original model first
         network = BertClassification(tokenizer=bert_tokenizer, pred_dim=bert_dim, pred_dropout=args.bert_pred_dropout,
@@ -384,7 +396,7 @@ def main():
                 dev_corr['full_bin_phase_v2'] = dev_corr['full_bin_phase']
             dev_tot['full_bin_phase'] += bin_mask.sum()
 
-            if tree.label != int(num_labels/2):
+            if tree.label != int(num_labels / 2):
                 dev_corr['bin_phase'] += bin_corr[0].sum()
                 dev_tot['bin_phase'] += bin_mask.sum()
                 dev_corr['bin_sents'] += bin_corr[0][-1]
@@ -445,7 +457,7 @@ def main():
                 # count total number
                 test_total['fine_phase'] += preds.size
                 test_total['full_bin_phase'] += bin_mask.sum()
-                if tree.label != int(num_labels/2):
+                if tree.label != int(num_labels / 2):
                     test_total['bin_phase'] += bin_mask.sum()
                     test_total['bin_sents'] += 1.0
 
@@ -459,7 +471,7 @@ def main():
                     else:
                         test_correct[key]['full_bin_phase_v2'] = test_correct[key]['full_bin_phase']
 
-                    if tree.label != int(num_labels/2):
+                    if tree.label != int(num_labels / 2):
                         test_correct[key]['bin_phase'] += bin_corr[0].sum()
                         test_correct[key]['bin_sents'] += bin_corr[0][-1]
 
