@@ -316,13 +316,9 @@ def main():
                              'bin_phase_v2': 0.0, 'bin_sents_v2': 0.0, 'full_bin_phase': 0.0, 'full_bin_phase_v2': 0.0}
     test_total = {'fine_phase': 0.0, 'fine_sents': 0.0, 'bin_phase': 0.0, 'bin_sents': 0.0, 'full_bin_phase': 0.0}
 
-    def log_print(name, fine_phase_acc, fine_sents_acc, bin_phase_acc, full_bin_phase_acc, bin_sents_acc,
-                  bin_phase_v2_acc, full_bin_phase_v2_acc, bin_sents_v2_acc):
-        print(name + ' phase acc: %.2f%%, sents acc: %.2f%%, binary phase acc: %.2f%%, full phase acc: %.2f%%, '
-                     'sents acc: %.2f%%, binary phase v2 acc: %.2f%%, full phase v2 acc: %.2f%%, dev sents v2 acc: '
-                     '%.2f%% '
-              % (fine_phase_acc, fine_sents_acc, bin_phase_acc, full_bin_phase_acc, bin_sents_acc,
-                 bin_phase_v2_acc, full_bin_phase_v2_acc, bin_sents_v2_acc))
+    def log_print(name, fine_phase_acc, fine_sents_acc, bin_sents_acc,bin_phase_v2_acc):
+        print(name + ' phase acc: %.2f%%, sents acc: %.2f%%, binary sents acc: %.2f%%, binary phase acc: %.2f%%,'
+              % (fine_phase_acc, fine_sents_acc, bin_sents_acc, bin_phase_v2_acc))
 
     for epoch in range(1, args.epoch + 1):
         train_dataset.shuffle()
@@ -421,12 +417,8 @@ def main():
 
         log_print('dev', dev_corr['fine_phase'] * 100 / dev_tot['fine_phase'],
                   dev_corr['fine_sents'] * 100 / dev_tot['fine_sents'],
-                  dev_corr['bin_phase'] * 100 / dev_tot['bin_phase'],
-                  dev_corr['full_bin_phase'] * 100 / dev_tot['full_bin_phase'],
                   dev_corr['bin_sents'] * 100 / dev_tot['bin_sents'],
-                  dev_corr['bin_phase_v2'] * 100 / dev_tot['bin_phase'],
-                  dev_corr['full_bin_phase_v2'] * 100 / dev_tot['full_bin_phase'],
-                  dev_corr['bin_sents_v2'] * 100 / dev_tot['bin_sents'])
+                  dev_corr['bin_phase_v2'] * 100 / dev_tot['bin_phase'])
 
         update = []
         for key in all_cite_version:
@@ -490,26 +482,6 @@ def main():
             test_total['bin_sents_v2'] = test_total['bin_sents']
             test_total['full_bin_phase_v2'] = test_total['full_bin_phase']
 
-            for key in update:
-                log_print('test ' + key, test_correct[key]['fine_phase'] * 100 / test_total['fine_phase'],
-                          test_correct[key]['fine_sents'] * 100 / test_total['fine_sents'],
-                          test_correct[key]['bin_phase'] * 100 / test_total['bin_phase'],
-                          test_correct[key]['full_bin_phase'] * 100 / test_total['full_bin_phase'],
-                          test_correct[key]['bin_sents'] * 100 / test_total['bin_sents'],
-                          test_correct[key]['bin_phase_v2'] * 100 / test_total['bin_phase_v2'],
-                          test_correct[key]['full_bin_phase_v2'] * 100 / test_total['full_bin_phase_v2'],
-                          test_correct[key]['bin_sents_v2'] * 100 / test_total['bin_sents_v2'])
-
-        for key in all_cite_version:
-            log_print('Best Epoch ' + str(best_epoch[key]) + ' test_' + key,
-                      test_correct[key]['fine_phase'] * 100 / test_total['fine_phase'],
-                      test_correct[key]['fine_sents'] * 100 / test_total['fine_sents'],
-                      test_correct[key]['bin_phase'] * 100 / test_total['bin_phase'],
-                      test_correct[key]['full_bin_phase'] * 100 / test_total['full_bin_phase'],
-                      test_correct[key]['bin_sents'] * 100 / test_total['bin_sents'],
-                      test_correct[key]['bin_phase_v2'] * 100 / test_total['bin_phase_v2'],
-                      test_correct[key]['full_bin_phase_v2'] * 100 / test_total['full_bin_phase_v2'],
-                      test_correct[key]['bin_sents_v2'] * 100 / test_total['bin_sents_v2'])
 
         for key1 in all_cite_version:
             best_score = 0.0
@@ -524,12 +496,8 @@ def main():
         log_print('Best ' + str(epoch) + ' Final test_',
                   final_test_corr['fine_phase'] * 100 / test_total['fine_phase'],
                   final_test_corr['fine_sents'] * 100 / test_total['fine_sents'],
-                  final_test_corr['bin_phase'] * 100 / test_total['bin_phase'],
-                  final_test_corr['full_bin_phase'] * 100 / test_total['full_bin_phase'],
                   final_test_corr['bin_sents'] * 100 / test_total['bin_sents'],
-                  final_test_corr['bin_phase_v2'] * 100 / test_total['bin_phase_v2'],
-                  final_test_corr['full_bin_phase_v2'] * 100 / test_total['full_bin_phase_v2'],
-                  final_test_corr['bin_sents_v2'] * 100 / test_total['bin_sents_v2'])
+                  final_test_corr['bin_phase_v2'] * 100 / test_total['bin_phase_v2'])
 
         if optim_method == "SGD" and epoch % schedule == 0:
             lr = learning_rate / (epoch * decay_rate)
