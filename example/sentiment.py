@@ -2,8 +2,6 @@ __author__ = 'Ehaschia'
 
 import argparse, sys, os
 
-sys.path.append('/home/ehaschia/Code/bi-tree-lstm-crf')
-
 import time
 
 import torch.optim as optim
@@ -51,9 +49,9 @@ def main():
     parser.add_argument('--embedding', choices=['glove', 'senna', 'sskip', 'polyglot', 'random'],
                         help='Embedding for words', required=True)
     parser.add_argument('--embedding_path', help='path for embedding dict')
-    parser.add_argument('--train', type=str, default='/home/ehaschia/Code/dataset/sst/trees/train.txt')
-    parser.add_argument('--dev', type=str, default='/home/ehaschia/Code/dataset/sst/trees/dev.txt')
-    parser.add_argument('--test', type=str, default='/home/ehaschia/Code/dataset/sst/trees/test.txt')
+    parser.add_argument('--train', type=str, default='/path/to/SST/train.txt')
+    parser.add_argument('--dev', type=str, default='/path/to/SST/dev.txt')
+    parser.add_argument('--test', type=str, default='/path/to/SST/test.txt')
     parser.add_argument('--num_labels', type=int, default=5)
     parser.add_argument('--p_in', type=float, default=0.5, help="Dropout prob for embedding")
     parser.add_argument('--p_leaf', type=float, default=0.5, help='Dropout prob for tree lstm input')
@@ -67,12 +65,10 @@ def main():
     parser.add_argument('--attention', action='store_true')
     parser.add_argument('--coattention_dim', type=int, default=150)
     parser.add_argument('--elmo', choices=['none', 'only', 'cat'])
-    parser.add_argument('--elmo_weight', type=str,
-                        default='/home/ehaschia/Code/dataset/elmo/elmo_2x4096_512_2048cnn_2xhighway_weights.hdf5')
-    parser.add_argument('--elmo_config', type=str,
-                        default='/home/ehaschia/Code/dataset/elmo/elmo_2x4096_512_2048cnn_2xhighway_options.json')
+    parser.add_argument('--elmo_weight', type=str, required=True)
+    parser.add_argument('--elmo_config', type=str, required=True)
     parser.add_argument('--bert', choices=['none', 'only_in', 'cat_in', 'out', 'only_in_out', 'cat_in_out'])
-    parser.add_argument('--bert_dir', type=str, default='/home/ehaschia/Code/dataset/elmo/')
+    parser.add_argument('--bert_dir', type=str, default='/path/to/bert/')
     parser.add_argument('--bert_model', choices=['bert-base-uncased', 'bert-large-uncased', 'bert-base-cased',
                                                  'bert-large-cased'])
     parser.add_argument('--lower', action='store_true')

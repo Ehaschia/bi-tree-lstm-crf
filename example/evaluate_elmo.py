@@ -3,9 +3,6 @@ __author__ = 'Ehaschia'
 import argparse
 import sys
 
-
-sys.path.append('/public/sist/home/zhanglw/code/sentiment/elmo/bi-tree-lstm-crf/')
-
 import time
 from tqdm import tqdm
 
@@ -30,9 +27,6 @@ def main():
     parser.add_argument('--embedding_p', type=float, default=0.5, help="Dropout prob for embedding")
     parser.add_argument('--component_num', type=int, default=1, help='the component number of mixture gaussian in LVeG')
     parser.add_argument('--gaussian_dim', type=int, default=1, help='the gaussian dim in LVeG')
-    parser.add_argument('--tensorboard', action='store_true')
-    parser.add_argument('--td_name', type=str, default='default', help='the name of this test')
-    parser.add_argument('--td_dir', type=str, required=True)
     parser.add_argument('--elmo_weight', type=str,
                         default='/home/ehaschia/Code/dataset/elmo/elmo_2x4096_512_2048cnn_2xhighway_weights.hdf5')
     parser.add_argument('--elmo_config', type=str,

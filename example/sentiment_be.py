@@ -4,8 +4,6 @@ import argparse
 import sys
 import os
 
-sys.path.append('/home/ehaschia/Code/bi-tree-lstm-crf')
-
 import time
 import datetime
 import torch.optim as optim
@@ -41,9 +39,9 @@ def main():
     parser.add_argument('--embedding', choices=['glove', 'senna', 'sskip', 'polyglot', 'random'],
                         help='Embedding for words', required=True)
     parser.add_argument('--embedding_path', help='path for embedding dict')
-    parser.add_argument('--train', type=str, default='/home/ehaschia/Code/dataset/sst/trees/train.txt')
-    parser.add_argument('--dev', type=str, default='/home/ehaschia/Code/dataset/sst/trees/dev.txt')
-    parser.add_argument('--test', type=str, default='/home/ehaschia/Code/dataset/sst/trees/test.txt')
+    parser.add_argument('--train', type=str, default='/path/to/SST/train.txt')
+    parser.add_argument('--dev', type=str, default='/path/to/SST/dev.txt')
+    parser.add_argument('--test', type=str, default='/path/to/SST/test.txt')
     parser.add_argument('--num_labels', type=int, default=5)
     parser.add_argument('--embedding_p', type=float, default=0.5, help="Dropout prob for embedding")
     parser.add_argument('--component_num', type=int, default=1, help='the component number of mixture gaussian in LVeG')
@@ -52,9 +50,9 @@ def main():
     parser.add_argument('--td_name', type=str, default='default', help='the name of this test')
     parser.add_argument('--td_dir', type=str, required=True)
     parser.add_argument('--elmo_weight', type=str,
-                        default='/home/ehaschia/Code/dataset/elmo/elmo_2x4096_512_2048cnn_2xhighway_weights.hdf5')
+                        default='/path/to/elmo/elmo_2x4096_512_2048cnn_2xhighway_weights.hdf5')
     parser.add_argument('--elmo_config', type=str,
-                        default='/home/ehaschia/Code/dataset/elmo/elmo_2x4096_512_2048cnn_2xhighway_options.json')
+                        default='/path/to/elmo//elmo_2x4096_512_2048cnn_2xhighway_options.json')
     parser.add_argument('--elmo_input', action='store_true')
     parser.add_argument('--elmo_output', action='store_true')
     parser.add_argument('--elmo_preencoder_dim', type=str, default='300')
@@ -66,7 +64,7 @@ def main():
     parser.add_argument('--elmo_output_p', type=str, default='0.2,0.3,0.0')
     parser.add_argument('--elmo_output_pool_size', type=int, default=4)
     parser.add_argument('--bert_pred_dropout', type=float, default=0.1)
-    parser.add_argument('--bert_dir', type=str, default='/home/ehaschia/Code/dataset/elmo/')
+    parser.add_argument('--bert_dir', type=str, default='path/to/bert/')
     parser.add_argument('--bert_model', choices=['bert-base-uncased', 'bert-large-uncased', 'bert-base-cased',
                                                  'bert-large-cased'])
     parser.add_argument('--random_seed', type=int, default=48)
