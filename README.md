@@ -1,6 +1,6 @@
 # Latent Variable Sentiment Grammar
 
-This repo contains code implementations for  ACL 2019 paper *Latent Variable Sentiment Grammar*
+This repo contains code implementations for  ACL 2019 paper [*Latent Variable Sentiment Grammar*](https://arxiv.org/pdf/1907.00218.pdf)
 
 ## Requirements
 
